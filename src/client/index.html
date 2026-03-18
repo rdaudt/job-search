@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Job Search Finder</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero">
+        <p class="eyebrow">Local capture hub</p>
+        <h1>Job Search Finder</h1>
+        <p class="lede">
+          Import search profiles, open Indeed searches on demand, capture visible listings from the
+          browser extension, and export a deduplicated CSV.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>1. Import Searches</h2>
+          <span id="search-count" class="panel-meta">0 profiles</span>
+        </div>
+        <form id="import-form" class="stack">
+          <label class="file-picker">
+            <span>Choose a JSON or CSV file</span>
+            <input id="search-file" name="file" type="file" accept=".json,.csv" />
+          </label>
+          <button type="submit">Import Search Profiles</button>
+        </form>
+        <p class="helper">Sample file available at <code>dist/searches.example.json</code> after build.</p>
+        <div id="search-list" class="search-list empty-state">No search profiles loaded yet.</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>2. Run Searches</h2>
+          <button id="run-searches" type="button">Open Indeed Searches</button>
+        </div>
+        <p class="helper">
+          This opens one browser tab per search profile. Use the extension action on an Indeed
+          results page to capture visible jobs.
+        </p>
+        <div id="runs" class="runs empty-state">No runs yet.</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>3. Review Jobs</h2>
+          <a href="/api/jobs/export.csv">Export CSV</a>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Company</th>
+                <th>Location</th>
+                <th>Searches</th>
+                <th>Last Seen</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="jobs-body">
+              <tr>
+                <td colspan="6" class="empty-cell">No captured jobs yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div id="toast" class="toast hidden" aria-live="polite"></div>
+    </main>
+
+    <script type="module" src="/index.js"></script>
+  </body>
+</html>

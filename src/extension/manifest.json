@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Job Search Finder Capture",
+  "description": "Capture visible Indeed search results into the local Job Search Finder app.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "Capture visible jobs"
+  },
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["https://*.indeed.com/*", "http://127.0.0.1:4312/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.indeed.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

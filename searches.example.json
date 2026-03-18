@@ -1,0 +1,16 @@
+[
+  {
+    "id": "frontend-remote",
+    "name": "Frontend Remote",
+    "keywords": "frontend engineer react typescript",
+    "location": "Vancouver, BC",
+    "remote": true
+  },
+  {
+    "id": "backend-local",
+    "name": "Backend Local",
+    "keywords": "backend engineer node",
+    "location": "Seattle, WA",
+    "remote": false
+  }
+]
