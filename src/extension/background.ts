@@ -1,30 +1,31 @@
-import { resolveSearchProfileIdFromUrl } from "./profile-matching.js";
+import { resolveRunTargetIdFromUrl } from "./profile-matching.js";
 
 const API_URL = "http://127.0.0.1:4312/api/captures";
 const SUMMARY_URL = "http://127.0.0.1:4312/api/summary";
 const AUTO_CAPTURE_DELAYS_MS = [1500, 4500, 9000];
 const autoCaptureStateByTabId = new Map<number, { url: string; attemptIndex: number; success: boolean }>();
 
-type SearchProfile = {
+type RunTarget = {
   id: string;
-  name: string;
+  searchProfileId: string;
+  searchProfileName: string;
   keywords: string;
   location: string;
   remote: boolean;
 };
 
 type AppSummary = {
-  searches: SearchProfile[];
+  latestRunTargets: RunTarget[];
 };
 
-async function inferSearchProfileId(pageUrl: string): Promise<string | null> {
+async function inferRunTargetId(pageUrl: string): Promise<string | null> {
   const response = await fetch(SUMMARY_URL);
   if (!response.ok) {
-    throw new Error(`Could not load search profiles from local app: ${response.status}`);
+    throw new Error(`Could not load run targets from local app: ${response.status}`);
   }
 
   const summary = (await response.json()) as AppSummary;
-  return resolveSearchProfileIdFromUrl(pageUrl, summary.searches);
+  return resolveRunTargetIdFromUrl(pageUrl, summary.latestRunTargets);
 }
 
 async function captureTab(tabId: number): Promise<{ inserted: number; updated: number }> {
@@ -38,10 +39,9 @@ async function captureTab(tabId: number): Promise<{ inserted: number; updated: n
       throw new Error("No capture payload returned from content script.");
     }
 
-    const searchProfileId =
-      response.payload.searchProfileId ?? (await inferSearchProfileId(response.payload.pageUrl));
-    if (!searchProfileId) {
-      throw new Error("Could not match this Indeed tab to an imported search profile.");
+    const runTargetId = response.payload.runTargetId ?? (await inferRunTargetId(response.payload.pageUrl));
+    if (!runTargetId) {
+      throw new Error("Could not match this Indeed tab to a launched run target.");
     }
 
     const postResponse = await fetch(API_URL, {
@@ -51,7 +51,7 @@ async function captureTab(tabId: number): Promise<{ inserted: number; updated: n
       },
       body: JSON.stringify({
         ...response.payload,
-        searchProfileId
+        runTargetId
       })
     });
 

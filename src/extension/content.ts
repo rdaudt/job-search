@@ -11,16 +11,16 @@ function textContent(element: Element | null): string {
   return element?.textContent?.replace(/\s+/g, " ").trim() ?? "";
 }
 
-function parseSearchProfileId(): string | null {
+function parseRunTargetId(): string | null {
   const currentUrl = new URL(window.location.href);
-  const queryValue = currentUrl.searchParams.get("jobFinderProfile");
+  const queryValue = currentUrl.searchParams.get("jobFinderRunTarget");
   if (queryValue) {
     return queryValue;
   }
 
   const fragment = currentUrl.hash.replace(/^#/, "");
   const params = new URLSearchParams(fragment);
-  return params.get("job-finder-profile");
+  return params.get("job-finder-run-target");
 }
 
 function absoluteUrl(href: string | null): string | null {
@@ -31,6 +31,22 @@ function absoluteUrl(href: string | null): string | null {
     return new URL(href, window.location.origin).toString();
   } catch {
     return null;
+  }
+}
+
+function buildCanonicalUrl(sourceJobId: string | undefined, href: string): string | undefined {
+  if (!sourceJobId) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(href);
+    const canonical = new URL(url.origin);
+    canonical.pathname = "/viewjob";
+    canonical.searchParams.set("jk", sourceJobId);
+    return canonical.toString();
+  } catch {
+    return undefined;
   }
 }
 
@@ -51,6 +67,7 @@ function extractListings(): CaptureListing[] {
       card.getAttribute("data-jk") ??
       titleLink?.getAttribute("data-jk") ??
       (href ? new URL(href).searchParams.get("jk") ?? undefined : undefined);
+    const canonicalUrl = href ? buildCanonicalUrl(sourceJobId, href) : undefined;
 
     if (!href) {
       continue;
@@ -80,6 +97,7 @@ function extractListings(): CaptureListing[] {
     listings.push({
       sourceJobId,
       url: href,
+      canonicalUrl,
       title,
       company,
       location,
@@ -95,7 +113,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
   }
 
-  const searchProfileId = parseSearchProfileId();
+  const runTargetId = parseRunTargetId();
   const listings = extractListings();
   if (!listings.length) {
     sendResponse({ error: "No visible job cards were detected on this page." });
@@ -105,7 +123,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   sendResponse({
     payload: {
       source: "indeed",
-      searchProfileId: searchProfileId ?? null,
+      runTargetId: runTargetId ?? null,
       pageUrl: window.location.href,
       listings
     }

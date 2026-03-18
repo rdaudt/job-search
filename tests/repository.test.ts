@@ -6,6 +6,7 @@ import { indeedAdapter } from "../src/shared/indeed.js";
 import type { CapturePayload } from "../src/shared/types.js";
 import { createDatabase } from "../src/server/db.js";
 import { Repository } from "../src/server/repository.js";
+import { buildRunTargetTemplates } from "../src/server/run-targets.js";
 
 const cleanupEntries: Array<{ tempDir: string; repository: Repository }> = [];
 
@@ -44,11 +45,13 @@ describe("Repository", () => {
         remote: true
       }
     ]);
+    const searches = repository.listSearchProfiles();
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []));
 
     const payload: CapturePayload = {
       source: "indeed",
-      searchProfileId: "one",
-      pageUrl: "https://www.indeed.com/jobs?q=react#job-finder-profile=one",
+      runTargetId: targets[0].id,
+      pageUrl: "https://www.indeed.com/jobs?q=react&jobFinderRunTarget=test",
       listings: [
         {
           sourceJobId: "jk123",
@@ -62,11 +65,12 @@ describe("Repository", () => {
     };
 
     repository.ingestCapture(payload);
-    repository.ingestCapture({ ...payload, searchProfileId: "two" });
+    repository.ingestCapture({ ...payload, runTargetId: targets[1].id });
 
     const jobs = repository.listJobs();
     expect(jobs).toHaveLength(1);
     expect(jobs[0].matchingSearchProfiles).toEqual(["One", "Two"]);
+    expect(jobs[0].matchingRunLocations).toEqual(["Remote"]);
   });
 
   it("exports CSV with the latest job state", () => {
@@ -80,18 +84,20 @@ describe("Repository", () => {
         remote: true
       }
     ]);
+    const searches = repository.listSearchProfiles();
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, ["Vancouver, BC", "Burnaby, BC"]));
 
     repository.ingestCapture({
       source: "indeed",
-      searchProfileId: "one",
-      pageUrl: "https://www.indeed.com/jobs?q=react#job-finder-profile=one",
+      runTargetId: targets[0].id,
+      pageUrl: "https://www.indeed.com/jobs?q=react&jobFinderRunTarget=test",
       listings: [
         {
           sourceJobId: "jk123",
           url: "https://www.indeed.com/viewjob?jk=jk123",
           title: "Frontend Engineer",
           company: "Acme",
-          location: "Remote"
+          location: "Vancouver, BC"
         }
       ]
     });
@@ -102,5 +108,6 @@ describe("Repository", () => {
     const csv = repository.exportJobsCsv();
     expect(csv).toContain("Frontend Engineer");
     expect(csv).toContain("saved");
+    expect(csv).toContain("Vancouver, BC");
   });
 });

@@ -13,6 +13,7 @@ import { openSearchUrls } from "./browser.js";
 import { createDatabase, ensureDataDir } from "./db.js";
 import { parseSearchProfilesFile } from "./importers.js";
 import { Repository } from "./repository.js";
+import { buildRunTargetTemplates, normalizeRunLocations } from "./run-targets.js";
 
 const rootDir = process.cwd();
 const distRoot = path.join(rootDir, "dist");
@@ -33,7 +34,8 @@ function getSummary(): AppSummary {
   return {
     searches: repository.listSearchProfiles(),
     jobs: repository.listJobs(),
-    runs: repository.listRuns()
+    runs: repository.listRuns(),
+    latestRunTargets: repository.listLatestRunTargets()
   };
 }
 
@@ -59,7 +61,7 @@ app.post("/api/searches/import", upload.single("file"), (req, res) => {
   }
 });
 
-app.post("/api/runs", async (_req, res) => {
+app.post("/api/runs", async (req, res) => {
   try {
     const searches = repository.listSearchProfiles();
     if (!searches.length) {
@@ -67,10 +69,12 @@ app.post("/api/runs", async (_req, res) => {
       return;
     }
 
-    const urls = searches.map((profile) => indeedAdapter.buildSearchUrl(profile));
-    const run = repository.createRun(urls.length);
+    const requestedLocations = normalizeRunLocations(Array.isArray(req.body?.locations) ? req.body.locations : []);
+    const runTargetTemplates = buildRunTargetTemplates(searches, requestedLocations);
+    const { run, targets } = repository.createRun(runTargetTemplates);
+    const urls = targets.map((target) => indeedAdapter.buildSearchUrl(target));
     await openSearchUrls(urls);
-    res.json({ run, urls });
+    res.json({ run, urls, targets });
   } catch (error) {
     res.status(500).json({
       error: error instanceof Error ? error.message : "Failed to launch search URLs."
@@ -81,9 +85,9 @@ app.post("/api/runs", async (_req, res) => {
 app.post("/api/captures", (req, res) => {
   try {
     const payload = capturePayloadSchema.parse(req.body);
-    const knownProfile = repository.listSearchProfiles().some((profile) => profile.id === payload.searchProfileId);
-    if (!knownProfile) {
-      res.status(400).json({ error: `Unknown search profile '${payload.searchProfileId}'.` });
+    const knownRunTarget = repository.getRunTarget(payload.runTargetId);
+    if (!knownRunTarget) {
+      res.status(400).json({ error: `Unknown run target '${payload.runTargetId}'.` });
       return;
     }
 

@@ -1,6 +1,12 @@
-import type { CaptureListing, SearchProfile, SourceAdapter } from "./types.js";
+import type { CaptureListing, RunTarget, SearchProfile, SourceAdapter } from "./types.js";
+import { selectIndeedHostForLocation } from "./location-utils.js";
 
-const INDEED_SEARCH_URL = "https://www.indeed.com/jobs";
+function buildCanonicalViewJobUrl(url: URL, jobId: string): string {
+  const canonical = new URL(url.origin);
+  canonical.pathname = "/viewjob";
+  canonical.searchParams.set("jk", jobId);
+  return canonical.toString();
+}
 
 function normalizeUrl(url: string): string {
   const parsed = new URL(url);
@@ -11,7 +17,15 @@ function normalizeUrl(url: string): string {
     }
   });
   const jobId = parsed.searchParams.get("jk") ?? parsed.searchParams.get("vjk");
+  if (jobId) {
+    return buildCanonicalViewJobUrl(parsed, jobId);
+  }
+
   parsed.search = "";
+  if (parsed.pathname === "/pagead/clk") {
+    return parsed.toString();
+  }
+
   if (jobId) {
     parsed.pathname = "/viewjob";
     parsed.searchParams.set("jk", jobId);
@@ -27,28 +41,30 @@ function extractJobId(url: string, explicitJobId?: string): string | null {
   return parsed.searchParams.get("jk") ?? parsed.searchParams.get("vjk");
 }
 
-function encodeRemoteKeywords(profile: SearchProfile): string {
+function encodeRemoteKeywords(profile: Pick<SearchProfile, "keywords" | "remote">): string {
   return profile.remote ? `${profile.keywords} remote` : profile.keywords;
 }
 
 export const indeedAdapter: SourceAdapter = {
-  buildSearchUrl(profile) {
-    const url = new URL(INDEED_SEARCH_URL);
-    url.searchParams.set("q", encodeRemoteKeywords(profile));
-    if (profile.location.trim()) {
-      url.searchParams.set("l", profile.location.trim());
+  buildSearchUrl(runTarget: RunTarget) {
+    const url = new URL(`https://${selectIndeedHostForLocation(runTarget.location)}/jobs`);
+    url.searchParams.set("q", encodeRemoteKeywords(runTarget));
+    if (runTarget.location.trim()) {
+      url.searchParams.set("l", runTarget.location.trim());
     }
-    url.searchParams.set("jobFinderProfile", profile.id);
-    url.hash = `job-finder-profile=${encodeURIComponent(profile.id)}`;
+    url.searchParams.set("jobFinderProfile", runTarget.searchProfileId);
+    url.searchParams.set("jobFinderRunTarget", runTarget.id);
+    url.hash = `job-finder-run-target=${encodeURIComponent(runTarget.id)}`;
     return url.toString();
   },
   normalizeListingKey(listing: CaptureListing) {
-    const sourceJobId = extractJobId(listing.url, listing.sourceJobId);
-    const normalizedUrl = normalizeUrl(listing.url);
+    const sourceJobId = extractJobId(listing.canonicalUrl ?? listing.url, listing.sourceJobId);
+    const normalizedUrl = normalizeUrl(listing.canonicalUrl ?? listing.url);
     return {
       sourceJobId,
       normalizedUrl,
-      dedupeKey: sourceJobId ? `indeed:${sourceJobId}` : `indeed:url:${normalizedUrl}`
+      dedupeKey: sourceJobId ? `indeed:${sourceJobId}` : `indeed:url:${normalizedUrl}`,
+      isLinkable: !normalizedUrl.includes("/pagead/clk")
     };
   },
   mapCaptureToJobRecord(listing) {
@@ -58,6 +74,7 @@ export const indeedAdapter: SourceAdapter = {
       sourceJobId: normalized.sourceJobId,
       normalizedUrl: normalized.normalizedUrl,
       dedupeKey: normalized.dedupeKey,
+      isLinkable: normalized.isLinkable,
       title: listing.title.trim(),
       company: listing.company.trim(),
       location: listing.location.trim(),
