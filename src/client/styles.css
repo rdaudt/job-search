@@ -93,6 +93,14 @@ h1 {
   margin-top: 16px;
 }
 
+.stack-vertical {
+  align-items: stretch;
+}
+
+.field-label {
+  font-weight: 700;
+}
+
 .file-picker {
   display: inline-flex;
   flex-direction: column;
@@ -105,6 +113,18 @@ input[type="file"] {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: white;
+}
+
+textarea {
+  width: 100%;
+  min-height: 112px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
 }
 
 button,

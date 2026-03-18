@@ -16,6 +16,7 @@ export type SearchProfile = z.infer<typeof searchProfileSchema>;
 export const captureListingSchema = z.object({
   sourceJobId: z.string().trim().optional(),
   url: z.string().url(),
+  canonicalUrl: z.string().url().optional(),
   title: z.string().min(1),
   company: z.string().default(""),
   location: z.string().default(""),
@@ -26,7 +27,7 @@ export type CaptureListing = z.infer<typeof captureListingSchema>;
 
 export const capturePayloadSchema = z.object({
   source: z.literal("indeed"),
-  searchProfileId: z.string().min(1),
+  runTargetId: z.string().min(1),
   pageUrl: z.string().url(),
   listings: z.array(captureListingSchema).min(1)
 });
@@ -39,12 +40,23 @@ export type RunRecord = {
   searchCount: number;
 };
 
+export type RunTarget = {
+  id: string;
+  runId: number;
+  searchProfileId: string;
+  searchProfileName: string;
+  keywords: string;
+  remote: boolean;
+  location: string;
+};
+
 export type JobRecord = {
   id: number;
   source: string;
   sourceJobId: string | null;
   dedupeKey: string;
   normalizedUrl: string;
+  isLinkable: boolean;
   title: string;
   company: string;
   location: string;
@@ -53,6 +65,7 @@ export type JobRecord = {
   lastSeenAt: string;
   status: JobStatus;
   matchingSearchProfiles: string[];
+  matchingRunLocations: string[];
 };
 
 export type PersistedSearchProfile = SearchProfile & {
@@ -67,23 +80,26 @@ export type JobCsvRow = {
   source: string;
   sourceUrl: string;
   searchProfiles: string;
+  runLocations: string;
   firstCapturedAt: string;
   lastSeenAt: string;
   status: JobStatus;
 };
 
 export type SourceAdapter = {
-  buildSearchUrl(profile: SearchProfile): string;
+  buildSearchUrl(runTarget: RunTarget): string;
   normalizeListingKey(listing: CaptureListing): {
     sourceJobId: string | null;
     normalizedUrl: string;
     dedupeKey: string;
+    isLinkable: boolean;
   };
   mapCaptureToJobRecord(listing: CaptureListing): {
     source: string;
     sourceJobId: string | null;
     normalizedUrl: string;
     dedupeKey: string;
+    isLinkable: boolean;
     title: string;
     company: string;
     location: string;
@@ -95,4 +111,5 @@ export type AppSummary = {
   searches: PersistedSearchProfile[];
   jobs: JobRecord[];
   runs: RunRecord[];
+  latestRunTargets: RunTarget[];
 };

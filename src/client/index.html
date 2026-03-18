@@ -38,6 +38,17 @@
           <h2>2. Run Searches</h2>
           <button id="run-searches" type="button">Open Indeed Searches</button>
         </div>
+        <div class="stack stack-vertical">
+          <label class="field-label" for="run-locations">Run locations</label>
+          <textarea
+            id="run-locations"
+            rows="4"
+            placeholder="Vancouver, BC&#10;Burnaby, BC&#10;Richmond, BC"
+          ></textarea>
+          <p id="run-location-preview" class="helper">
+            Leave blank to use each imported profile's default location.
+          </p>
+        </div>
         <p class="helper">
           This opens one browser tab per search profile. Use the extension action on an Indeed
           results page to capture visible jobs.
@@ -58,13 +69,14 @@
                 <th>Company</th>
                 <th>Location</th>
                 <th>Searches</th>
+                <th>Run Locations</th>
                 <th>Last Seen</th>
                 <th>Status</th>
               </tr>
             </thead>
             <tbody id="jobs-body">
               <tr>
-                <td colspan="6" class="empty-cell">No captured jobs yet.</td>
+                <td colspan="7" class="empty-cell">No captured jobs yet.</td>
               </tr>
             </tbody>
           </table>

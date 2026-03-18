@@ -5,10 +5,13 @@ const searchFileInput = document.querySelector<HTMLInputElement>("#search-file")
 const searchCount = document.querySelector<HTMLElement>("#search-count");
 const searchList = document.querySelector<HTMLElement>("#search-list");
 const runSearchesButton = document.querySelector<HTMLButtonElement>("#run-searches");
+const runLocationsInput = document.querySelector<HTMLTextAreaElement>("#run-locations");
+const runLocationPreview = document.querySelector<HTMLElement>("#run-location-preview");
 const runsContainer = document.querySelector<HTMLElement>("#runs");
 const jobsBody = document.querySelector<HTMLElement>("#jobs-body");
 const toast = document.querySelector<HTMLElement>("#toast");
 const SUMMARY_REFRESH_INTERVAL_MS = 4000;
+const RUN_LOCATIONS_STORAGE_KEY = "job-search-finder-run-locations";
 
 let isLoadingSummary = false;
 let previousJobCount = 0;
@@ -21,6 +24,33 @@ function showToast(message: string): void {
   toast.textContent = message;
   toast.classList.remove("hidden");
   window.setTimeout(() => toast.classList.add("hidden"), 2800);
+}
+
+function parseRunLocations(raw: string): string[] {
+  const deduped = new Map<string, string>();
+  raw
+    .split(/\r?\n/)
+    .map((entry) => entry.trim().replace(/\s+/g, " "))
+    .filter(Boolean)
+    .forEach((location) => {
+      const key = location.toLowerCase();
+      if (!deduped.has(key)) {
+        deduped.set(key, location);
+      }
+    });
+  return [...deduped.values()];
+}
+
+function renderRunLocationPreview(): string[] {
+  const locations = parseRunLocations(runLocationsInput?.value ?? "");
+  if (!runLocationPreview) {
+    return locations;
+  }
+
+  runLocationPreview.textContent = locations.length
+    ? `This run will open each imported search across ${locations.length} location${locations.length === 1 ? "" : "s"}: ${locations.join(", ")}`
+    : "Leave blank to use each imported profile's default location.";
+  return locations;
 }
 
 function renderSearches(searches: PersistedSearchProfile[]): void {
@@ -88,7 +118,7 @@ function renderJobs(jobs: JobRecord[]): void {
   }
 
   if (!jobs.length) {
-    jobsBody.innerHTML = `<tr><td colspan="6" class="empty-cell">No captured jobs yet.</td></tr>`;
+    jobsBody.innerHTML = `<tr><td colspan="7" class="empty-cell">No captured jobs yet.</td></tr>`;
     return;
   }
 
@@ -97,14 +127,19 @@ function renderJobs(jobs: JobRecord[]): void {
       (job) => `
         <tr>
           <td>
-            <a class="job-link" href="${job.normalizedUrl}" target="_blank" rel="noreferrer">
+            ${
+              job.isLinkable
+                ? `<a class="job-link" href="${job.normalizedUrl}" target="_blank" rel="noreferrer">
               <span class="job-title">${job.title}</span>
-            </a>
+            </a>`
+                : `<span class="job-title">${job.title}</span>`
+            }
             ${job.summary ? `<p class="job-summary">${job.summary}</p>` : ""}
           </td>
           <td>${job.company || "Unknown"}</td>
           <td>${job.location || "Unknown"}</td>
           <td>${job.matchingSearchProfiles.join(", ")}</td>
+          <td>${job.matchingRunLocations.join(", ") || "Any"}</td>
           <td>${new Date(job.lastSeenAt).toLocaleString()}</td>
           <td>
             <select class="status-select" data-job-id="${job.id}">
@@ -193,7 +228,14 @@ importForm?.addEventListener("submit", async (event) => {
 });
 
 runSearchesButton?.addEventListener("click", async () => {
-  const response = await fetch("/api/runs", { method: "POST" });
+  const locations = renderRunLocationPreview();
+  const response = await fetch("/api/runs", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ locations })
+  });
   if (!response.ok) {
     const error = (await response.json()) as { error?: string };
     showToast(error.error ?? "Could not open searches.");
@@ -202,6 +244,16 @@ runSearchesButton?.addEventListener("click", async () => {
   showToast("Opened search tabs.");
   await loadSummary();
 });
+
+runLocationsInput?.addEventListener("input", () => {
+  localStorage.setItem(RUN_LOCATIONS_STORAGE_KEY, runLocationsInput.value);
+  renderRunLocationPreview();
+});
+
+if (runLocationsInput) {
+  runLocationsInput.value = localStorage.getItem(RUN_LOCATIONS_STORAGE_KEY) ?? "";
+  renderRunLocationPreview();
+}
 
 void loadSummary();
 window.setInterval(() => {
