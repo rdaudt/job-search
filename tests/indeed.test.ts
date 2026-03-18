@@ -45,6 +45,12 @@ describe("indeedAdapter", () => {
     expect(listingMatchesRunLocation("Hybrid work in Vancouver, BC", "Maple Ridge, BC")).toBe(true);
   });
 
+  it("keeps valid remote listings for remote runs with a location scope", () => {
+    expect(listingMatchesRunLocation("Remote", "Vancouver, BC", true)).toBe(true);
+    expect(listingMatchesRunLocation("Remote in British Columbia", "Vancouver, BC", true)).toBe(true);
+    expect(listingMatchesRunLocation("Remote in United States", "Vancouver, BC", true)).toBe(false);
+  });
+
   it("canonicalizes sponsored links when a job id is present", () => {
     const normalized = indeedAdapter.normalizeListingKey({
       sourceJobId: "abc123",

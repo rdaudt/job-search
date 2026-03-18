@@ -273,7 +273,7 @@ export class Repository {
       `);
 
       for (const listing of payload.listings) {
-        if (!listingMatchesRunLocation(listing.location, runTarget.location)) {
+        if (!listingMatchesRunLocation(listing.location, runTarget.location, runTarget.remote)) {
           continue;
         }
         const mapped = this.adapter.mapCaptureToJobRecord(listing);

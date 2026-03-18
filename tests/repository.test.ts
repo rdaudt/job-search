@@ -110,4 +110,38 @@ describe("Repository", () => {
     expect(csv).toContain("saved");
     expect(csv).toContain("Vancouver, BC");
   });
+
+  it("keeps remote listings for remote profiles scoped to a city", () => {
+    const repository = createRepository();
+    repository.replaceSearchProfiles([
+      {
+        id: "remote-vancouver",
+        name: "Remote Vancouver",
+        keywords: "frontend engineer",
+        location: "Vancouver, BC",
+        remote: true
+      }
+    ]);
+    const searches = repository.listSearchProfiles();
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []));
+
+    repository.ingestCapture({
+      source: "indeed",
+      runTargetId: targets[0].id,
+      pageUrl: "https://ca.indeed.com/jobs?q=frontend+engineer+remote&l=Vancouver%2C+BC",
+      listings: [
+        {
+          sourceJobId: "jk999",
+          url: "https://ca.indeed.com/viewjob?jk=jk999",
+          title: "Frontend Engineer",
+          company: "Acme",
+          location: "Remote in British Columbia"
+        }
+      ]
+    });
+
+    const jobs = repository.listJobs();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].matchingRunLocations).toEqual(["Vancouver, BC"]);
+  });
 });
