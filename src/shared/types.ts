@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const statusValues = ["new", "reviewed", "saved", "ignored"] as const;
 export type JobStatus = (typeof statusValues)[number];
+export const runTargetStatusValues = ["pending", "capturing", "completed", "failed"] as const;
+export type RunTargetStatus = (typeof runTargetStatusValues)[number];
 
 export const searchProfileSchema = z.object({
   id: z.string().min(1),
@@ -29,6 +31,7 @@ export const capturePayloadSchema = z.object({
   source: z.literal("indeed"),
   runTargetId: z.string().min(1),
   pageUrl: z.string().url(),
+  pageNumber: z.number().int().min(1).default(1),
   listings: z.array(captureListingSchema).min(1)
 });
 
@@ -38,6 +41,7 @@ export type RunRecord = {
   id: number;
   startedAt: string;
   searchCount: number;
+  maxPages: number;
 };
 
 export type RunTarget = {
@@ -48,7 +52,23 @@ export type RunTarget = {
   keywords: string;
   remote: boolean;
   location: string;
+  maxPages: number;
+  pagesCaptured: number;
+  status: RunTargetStatus;
+  stopReason: string | null;
+  lastPageNumber: number | null;
+  lastPageUrl: string | null;
+  updatedAt: string;
 };
+
+export const runTargetStateUpdateSchema = z.object({
+  status: z.enum(runTargetStatusValues),
+  stopReason: z.string().trim().min(1).optional(),
+  pageNumber: z.number().int().min(1).optional(),
+  pageUrl: z.string().url().optional()
+});
+
+export type RunTargetStateUpdate = z.infer<typeof runTargetStateUpdateSchema>;
 
 export type JobRecord = {
   id: number;

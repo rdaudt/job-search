@@ -5,6 +5,7 @@ import multer from "multer";
 import { indeedAdapter } from "../shared/indeed.js";
 import {
   capturePayloadSchema,
+  runTargetStateUpdateSchema,
   statusValues,
   type AppSummary,
   type JobStatus
@@ -25,6 +26,8 @@ const repository = new Repository(database, indeedAdapter);
 const app = express();
 const upload = multer();
 const port = Number(process.env.PORT ?? 4312);
+const DEFAULT_MAX_PAGES = 1;
+const MAX_PAGES_LIMIT = 5;
 
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: "1mb" }));
@@ -37,6 +40,14 @@ function getSummary(): AppSummary {
     runs: repository.listRuns(),
     latestRunTargets: repository.listLatestRunTargets()
   };
+}
+
+function normalizeMaxPages(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return DEFAULT_MAX_PAGES;
+  }
+  return Math.min(parsed, MAX_PAGES_LIMIT);
 }
 
 app.get("/api/summary", (_req, res) => {
@@ -71,7 +82,8 @@ app.post("/api/runs", async (req, res) => {
 
     const requestedLocations = normalizeRunLocations(Array.isArray(req.body?.locations) ? req.body.locations : []);
     const runTargetTemplates = buildRunTargetTemplates(searches, requestedLocations);
-    const { run, targets } = repository.createRun(runTargetTemplates);
+    const maxPages = normalizeMaxPages(req.body?.maxPages);
+    const { run, targets } = repository.createRun(runTargetTemplates, maxPages);
     const urls = targets.map((target) => indeedAdapter.buildSearchUrl(target));
     await openSearchUrls(urls);
     res.json({ run, urls, targets });
@@ -96,6 +108,25 @@ app.post("/api/captures", (req, res) => {
   } catch (error) {
     res.status(400).json({
       error: error instanceof Error ? error.message : "Could not ingest capture payload."
+    });
+  }
+});
+
+app.post("/api/run-targets/:id/state", (req, res) => {
+  try {
+    const runTargetId = req.params.id;
+    const knownRunTarget = repository.getRunTarget(runTargetId);
+    if (!knownRunTarget) {
+      res.status(404).json({ error: `Unknown run target '${runTargetId}'.` });
+      return;
+    }
+
+    const update = runTargetStateUpdateSchema.parse(req.body);
+    repository.updateRunTargetState(runTargetId, update);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : "Could not update run target state."
     });
   }
 });

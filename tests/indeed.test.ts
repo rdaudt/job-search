@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { indeedAdapter } from "../src/shared/indeed.js";
+import { attachRunTargetMetadata, indeedAdapter, parseIndeedPageNumber } from "../src/shared/indeed.js";
 import { listingMatchesRunLocation } from "../src/shared/location-utils.js";
 
 describe("indeedAdapter", () => {
@@ -75,5 +75,21 @@ describe("indeedAdapter", () => {
 
     expect(normalized.normalizedUrl).toBe("https://ca.indeed.com/pagead/clk");
     expect(normalized.isLinkable).toBe(false);
+  });
+
+  it("stamps pagination URLs with run target metadata", () => {
+    const stamped = attachRunTargetMetadata(
+      "https://ca.indeed.com/jobs?q=frontend+engineer&l=Vancouver%2C+BC&start=10",
+      {
+        id: "run-target-1",
+        searchProfileId: "frontend"
+      },
+    );
+
+    const parsed = new URL(stamped);
+    expect(parsed.searchParams.get("jobFinderRunTarget")).toBe("run-target-1");
+    expect(parsed.searchParams.get("jobFinderProfile")).toBe("frontend");
+    expect(parsed.hash).toBe("#job-finder-run-target=run-target-1");
+    expect(parseIndeedPageNumber(stamped)).toBe(2);
   });
 });

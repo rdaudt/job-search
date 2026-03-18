@@ -45,6 +45,26 @@ function encodeRemoteKeywords(profile: Pick<SearchProfile, "keywords" | "remote"
   return profile.remote ? `${profile.keywords} remote` : profile.keywords;
 }
 
+export function attachRunTargetMetadata(
+  pageUrl: string,
+  runTarget: Pick<RunTarget, "id" | "searchProfileId">,
+): string {
+  const url = new URL(pageUrl);
+  url.searchParams.set("jobFinderProfile", runTarget.searchProfileId);
+  url.searchParams.set("jobFinderRunTarget", runTarget.id);
+  url.hash = `job-finder-run-target=${encodeURIComponent(runTarget.id)}`;
+  return url.toString();
+}
+
+export function parseIndeedPageNumber(pageUrl: string): number {
+  const url = new URL(pageUrl);
+  const startValue = Number(url.searchParams.get("start") ?? "0");
+  if (!Number.isFinite(startValue) || startValue < 0) {
+    return 1;
+  }
+  return Math.floor(startValue / 10) + 1;
+}
+
 export const indeedAdapter: SourceAdapter = {
   buildSearchUrl(runTarget: RunTarget) {
     const url = new URL(`https://${selectIndeedHostForLocation(runTarget.location)}/jobs`);

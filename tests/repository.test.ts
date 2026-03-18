@@ -46,7 +46,7 @@ describe("Repository", () => {
       }
     ]);
     const searches = repository.listSearchProfiles();
-    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []));
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), 2);
 
     const payload: CapturePayload = {
       source: "indeed",
@@ -85,7 +85,7 @@ describe("Repository", () => {
       }
     ]);
     const searches = repository.listSearchProfiles();
-    const { targets } = repository.createRun(buildRunTargetTemplates(searches, ["Vancouver, BC", "Burnaby, BC"]));
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, ["Vancouver, BC", "Burnaby, BC"]), 3);
 
     repository.ingestCapture({
       source: "indeed",
@@ -123,7 +123,7 @@ describe("Repository", () => {
       }
     ]);
     const searches = repository.listSearchProfiles();
-    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []));
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), 2);
 
     repository.ingestCapture({
       source: "indeed",
@@ -143,5 +143,51 @@ describe("Repository", () => {
     const jobs = repository.listJobs();
     expect(jobs).toHaveLength(1);
     expect(jobs[0].matchingRunLocations).toEqual(["Vancouver, BC"]);
+  });
+
+  it("tracks page progress and terminal state per run target", () => {
+    const repository = createRepository();
+    repository.replaceSearchProfiles([
+      {
+        id: "frontend",
+        name: "Frontend",
+        keywords: "frontend engineer",
+        location: "Vancouver, BC",
+        remote: false
+      }
+    ]);
+
+    const searches = repository.listSearchProfiles();
+    const { run, targets } = repository.createRun(buildRunTargetTemplates(searches, []), 3);
+    expect(run.maxPages).toBe(3);
+
+    repository.ingestCapture({
+      source: "indeed",
+      runTargetId: targets[0].id,
+      pageUrl: "https://ca.indeed.com/jobs?q=frontend+engineer&l=Vancouver%2C+BC",
+      pageNumber: 2,
+      listings: [
+        {
+          sourceJobId: "jk-progress",
+          url: "https://ca.indeed.com/viewjob?jk=jk-progress",
+          title: "Frontend Engineer II",
+          company: "Acme",
+          location: "Vancouver, BC"
+        }
+      ]
+    });
+    repository.updateRunTargetState(targets[0].id, {
+      status: "completed",
+      stopReason: "page-limit-reached",
+      pageNumber: 2,
+      pageUrl: "https://ca.indeed.com/jobs?q=frontend+engineer&l=Vancouver%2C+BC&start=10"
+    });
+
+    const latestTarget = repository.listLatestRunTargets()[0];
+    expect(latestTarget.pagesCaptured).toBe(2);
+    expect(latestTarget.maxPages).toBe(3);
+    expect(latestTarget.status).toBe("completed");
+    expect(latestTarget.stopReason).toBe("page-limit-reached");
+    expect(latestTarget.lastPageNumber).toBe(2);
   });
 });

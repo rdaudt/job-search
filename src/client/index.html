@@ -39,6 +39,18 @@
           <button id="run-searches" type="button">Open Indeed Searches</button>
         </div>
         <div class="stack stack-vertical">
+          <label class="field-label" for="max-pages">Pages per search</label>
+          <select id="max-pages">
+            <option value="1">1 page</option>
+            <option value="2">2 pages</option>
+            <option value="3">3 pages</option>
+            <option value="4">4 pages</option>
+            <option value="5">5 pages</option>
+          </select>
+          <p class="helper">
+            The extension will capture page 1, move to the next results page in the same tab, and
+            stop when it reaches this limit or when Indeed has no next page.
+          </p>
           <label class="field-label" for="run-locations">Run locations</label>
           <textarea
             id="run-locations"
@@ -50,8 +62,8 @@
           </p>
         </div>
         <p class="helper">
-          This opens one browser tab per search profile. Use the extension action on an Indeed
-          results page to capture visible jobs.
+          This opens one browser tab per search target. The extension auto-captures the visible
+          page and follows the next page in the same tab until it reaches the selected limit.
         </p>
         <div id="runs" class="runs empty-state">No runs yet.</div>
       </section>

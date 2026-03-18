@@ -1,6 +1,9 @@
+import { parseIndeedPageNumber } from "../shared/indeed.js";
+
 type CaptureListing = {
   sourceJobId?: string;
   url: string;
+  canonicalUrl?: string;
   title: string;
   company: string;
   location: string;
@@ -48,6 +51,15 @@ function buildCanonicalUrl(sourceJobId: string | undefined, href: string): strin
   } catch {
     return undefined;
   }
+}
+
+function nextPageUrl(): string | null {
+  const nextLink =
+    document.querySelector<HTMLAnchorElement>("a[data-testid='pagination-page-next']") ??
+    document.querySelector<HTMLAnchorElement>("a[aria-label*='Next']") ??
+    document.querySelector<HTMLAnchorElement>("a[aria-label*='next']") ??
+    document.querySelector<HTMLAnchorElement>("nav a[href*='/jobs'][aria-label*='Page']");
+  return absoluteUrl(nextLink?.getAttribute("href") ?? null);
 }
 
 function extractListings(): CaptureListing[] {
@@ -114,9 +126,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   const runTargetId = parseRunTargetId();
+  const pageUrl = window.location.href;
+  const pageNumber = parseIndeedPageNumber(pageUrl);
+  const nextUrl = nextPageUrl();
   const listings = extractListings();
   if (!listings.length) {
-    sendResponse({ error: "No visible job cards were detected on this page." });
+    sendResponse({
+      error: "No visible job cards were detected on this page.",
+      pageContext: {
+        runTargetId: runTargetId ?? null,
+        pageUrl,
+        pageNumber,
+        nextPageUrl: nextUrl
+      }
+    });
     return false;
   }
 
@@ -124,7 +147,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     payload: {
       source: "indeed",
       runTargetId: runTargetId ?? null,
-      pageUrl: window.location.href,
+      pageUrl,
+      pageNumber,
+      nextPageUrl: nextUrl,
       listings
     }
   });

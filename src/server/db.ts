@@ -37,6 +37,36 @@ function ensureLinkabilityColumn(database: Database.Database): void {
   }
 }
 
+function ensureRunColumns(database: Database.Database): void {
+  if (!tableHasColumn(database, "runs", "max_pages")) {
+    database.exec("ALTER TABLE runs ADD COLUMN max_pages INTEGER NOT NULL DEFAULT 1");
+  }
+}
+
+function ensureRunTargetColumns(database: Database.Database): void {
+  if (!tableHasColumn(database, "run_targets", "max_pages")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN max_pages INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!tableHasColumn(database, "run_targets", "pages_captured")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN pages_captured INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!tableHasColumn(database, "run_targets", "status")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'");
+  }
+  if (!tableHasColumn(database, "run_targets", "stop_reason")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN stop_reason TEXT");
+  }
+  if (!tableHasColumn(database, "run_targets", "last_page_number")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN last_page_number INTEGER");
+  }
+  if (!tableHasColumn(database, "run_targets", "last_page_url")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN last_page_url TEXT");
+  }
+  if (!tableHasColumn(database, "run_targets", "updated_at")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''");
+  }
+}
+
 export function ensureDataDir(rootDir: string): string {
   const dataDir = path.join(rootDir, "data");
   fs.mkdirSync(dataDir, { recursive: true });
@@ -64,7 +94,8 @@ export function createDatabase(dbPath: string): Database.Database {
     CREATE TABLE IF NOT EXISTS runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       started_at TEXT NOT NULL,
-      search_count INTEGER NOT NULL
+      search_count INTEGER NOT NULL,
+      max_pages INTEGER NOT NULL DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS run_targets (
@@ -72,6 +103,13 @@ export function createDatabase(dbPath: string): Database.Database {
       run_id INTEGER NOT NULL,
       search_profile_id TEXT NOT NULL,
       location TEXT NOT NULL DEFAULT '',
+      max_pages INTEGER NOT NULL DEFAULT 1,
+      pages_captured INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      stop_reason TEXT,
+      last_page_number INTEGER,
+      last_page_url TEXT,
+      updated_at TEXT NOT NULL DEFAULT '',
       FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE,
       FOREIGN KEY (search_profile_id) REFERENCES search_profiles(id) ON DELETE CASCADE
     );
@@ -103,5 +141,7 @@ export function createDatabase(dbPath: string): Database.Database {
     );
   `);
   ensureLinkabilityColumn(database);
+  ensureRunColumns(database);
+  ensureRunTargetColumns(database);
   return database;
 }

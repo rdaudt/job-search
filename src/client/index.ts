@@ -1,10 +1,11 @@
-import type { AppSummary, JobRecord, JobStatus, PersistedSearchProfile, RunRecord } from "../shared/types.js";
+import type { AppSummary, JobRecord, JobStatus, PersistedSearchProfile, RunRecord, RunTarget } from "../shared/types.js";
 
 const importForm = document.querySelector<HTMLFormElement>("#import-form");
 const searchFileInput = document.querySelector<HTMLInputElement>("#search-file");
 const searchCount = document.querySelector<HTMLElement>("#search-count");
 const searchList = document.querySelector<HTMLElement>("#search-list");
 const runSearchesButton = document.querySelector<HTMLButtonElement>("#run-searches");
+const maxPagesInput = document.querySelector<HTMLSelectElement>("#max-pages");
 const runLocationsInput = document.querySelector<HTMLTextAreaElement>("#run-locations");
 const runLocationPreview = document.querySelector<HTMLElement>("#run-location-preview");
 const runsContainer = document.querySelector<HTMLElement>("#runs");
@@ -12,6 +13,7 @@ const jobsBody = document.querySelector<HTMLElement>("#jobs-body");
 const toast = document.querySelector<HTMLElement>("#toast");
 const SUMMARY_REFRESH_INTERVAL_MS = 4000;
 const RUN_LOCATIONS_STORAGE_KEY = "job-search-finder-run-locations";
+const MAX_PAGES_STORAGE_KEY = "job-search-finder-max-pages";
 
 let isLoadingSummary = false;
 let previousJobCount = 0;
@@ -81,7 +83,15 @@ function renderSearches(searches: PersistedSearchProfile[]): void {
     .join("");
 }
 
-function renderRuns(runs: RunRecord[]): void {
+function humanizeStopReason(reason: string | null): string {
+  if (!reason) {
+    return "In progress";
+  }
+
+  return reason.replace(/-/g, " ");
+}
+
+function renderRuns(runs: RunRecord[], latestRunTargets: RunTarget[]): void {
   if (!runsContainer) {
     return;
   }
@@ -95,13 +105,37 @@ function renderRuns(runs: RunRecord[]): void {
   runsContainer.classList.remove("empty-state");
   runsContainer.innerHTML = runs
     .map(
-      (run) => `
+      (run) => {
+        const targetMarkup = latestRunTargets
+          .filter((target) => target.runId === run.id)
+          .map(
+            (target) => `
+              <li class="run-target-item">
+                <strong>${target.searchProfileName}</strong>
+                <span>${target.location || "Any"}</span>
+                <span>${target.pagesCaptured}/${target.maxPages} pages</span>
+                <span>${target.status}</span>
+                <span>${humanizeStopReason(target.stopReason)}</span>
+              </li>
+            `,
+          )
+          .join("");
+
+        return `
         <article class="run-card">
           <h3>Run #${run.id}</h3>
           <p class="run-meta">${new Date(run.startedAt).toLocaleString()}</p>
-          <p class="run-meta">Opened ${run.searchCount} search URL${run.searchCount === 1 ? "" : "s"}</p>
+          <p class="run-meta">
+            Opened ${run.searchCount} search URL${run.searchCount === 1 ? "" : "s"} with a ${run.maxPages}-page limit
+          </p>
+          ${
+            targetMarkup
+              ? `<ul class="run-target-list">${targetMarkup}</ul>`
+              : ""
+          }
         </article>
-      `,
+      `;
+      },
     )
     .join("");
 }
@@ -182,7 +216,7 @@ async function loadSummary(): Promise<void> {
     const response = await fetch("/api/summary");
     const summary = (await response.json()) as AppSummary;
     renderSearches(summary.searches);
-    renderRuns(summary.runs);
+    renderRuns(summary.runs, summary.latestRunTargets);
     renderJobs(summary.jobs);
     bindStatusEditors();
 
@@ -229,12 +263,13 @@ importForm?.addEventListener("submit", async (event) => {
 
 runSearchesButton?.addEventListener("click", async () => {
   const locations = renderRunLocationPreview();
+  const maxPages = Math.max(1, Number(maxPagesInput?.value ?? "1") || 1);
   const response = await fetch("/api/runs", {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ locations })
+    body: JSON.stringify({ locations, maxPages })
   });
   if (!response.ok) {
     const error = (await response.json()) as { error?: string };
@@ -250,9 +285,17 @@ runLocationsInput?.addEventListener("input", () => {
   renderRunLocationPreview();
 });
 
+maxPagesInput?.addEventListener("change", () => {
+  localStorage.setItem(MAX_PAGES_STORAGE_KEY, maxPagesInput.value);
+});
+
 if (runLocationsInput) {
   runLocationsInput.value = localStorage.getItem(RUN_LOCATIONS_STORAGE_KEY) ?? "";
   renderRunLocationPreview();
+}
+
+if (maxPagesInput) {
+  maxPagesInput.value = localStorage.getItem(MAX_PAGES_STORAGE_KEY) ?? "1";
 }
 
 void loadSummary();

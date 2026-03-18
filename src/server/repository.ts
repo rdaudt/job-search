@@ -8,6 +8,7 @@ import type {
   PersistedSearchProfile,
   RunTarget,
   RunRecord,
+  RunTargetStateUpdate,
   SearchProfile
 } from "../shared/types.js";
 import type { SourceAdapter } from "../shared/types.js";
@@ -35,6 +36,7 @@ type RunRow = {
   id: number;
   started_at: string;
   search_count: number;
+  max_pages: number;
 };
 
 type SearchRow = {
@@ -55,6 +57,13 @@ type RunTargetRow = {
   keywords: string;
   remote: number;
   location: string;
+  max_pages: number;
+  pages_captured: number;
+  status: string;
+  stop_reason: string | null;
+  last_page_number: number | null;
+  last_page_url: string | null;
+  updated_at: string;
 };
 
 type RunTargetTemplate = Omit<RunTarget, "runId">;
@@ -110,16 +119,21 @@ export class Repository {
     }));
   }
 
-  createRun(runTargetTemplates: RunTargetTemplate[]): { run: RunRecord; targets: RunTarget[] } {
+  createRun(runTargetTemplates: RunTargetTemplate[], maxPages: number): { run: RunRecord; targets: RunTarget[] } {
     const startedAt = new Date().toISOString();
-    const transaction = this.database.transaction((templates: RunTargetTemplate[]) => {
+    const transaction = this.database.transaction((templates: RunTargetTemplate[], pageLimit: number) => {
       const runResult = this.database
-        .prepare("INSERT INTO runs (started_at, search_count) VALUES (?, ?)")
-        .run(startedAt, templates.length);
+        .prepare("INSERT INTO runs (started_at, search_count, max_pages) VALUES (?, ?, ?)")
+        .run(startedAt, templates.length, pageLimit);
       const runId = Number(runResult.lastInsertRowid);
       const insertRunTarget = this.database.prepare(`
-        INSERT INTO run_targets (id, run_id, search_profile_id, location)
-        VALUES (@id, @runId, @searchProfileId, @location)
+        INSERT INTO run_targets (
+          id, run_id, search_profile_id, location, max_pages, pages_captured, status, stop_reason,
+          last_page_number, last_page_url, updated_at
+        )
+        VALUES (
+          @id, @runId, @searchProfileId, @location, @maxPages, 0, 'pending', NULL, NULL, NULL, @updatedAt
+        )
       `);
 
       for (const template of templates) {
@@ -127,7 +141,9 @@ export class Repository {
           id: template.id,
           runId,
           searchProfileId: template.searchProfileId,
-          location: template.location
+          location: template.location,
+          maxPages: pageLimit,
+          updatedAt: startedAt
         });
       }
 
@@ -135,27 +151,36 @@ export class Repository {
         run: {
           id: runId,
           startedAt,
-          searchCount: templates.length
+          searchCount: templates.length,
+          maxPages: pageLimit
         },
         targets: templates.map((template) => ({
           ...template,
-          runId
+          runId,
+          maxPages: pageLimit,
+          pagesCaptured: 0,
+          status: "pending",
+          stopReason: null,
+          lastPageNumber: null,
+          lastPageUrl: null,
+          updatedAt: startedAt
         }))
       };
     });
 
-    return transaction(runTargetTemplates);
+    return transaction(runTargetTemplates, maxPages);
   }
 
   listRuns(): RunRecord[] {
     const rows = this.database
-      .prepare("SELECT id, started_at, search_count FROM runs ORDER BY started_at DESC LIMIT 20")
+      .prepare("SELECT id, started_at, search_count, max_pages FROM runs ORDER BY started_at DESC LIMIT 20")
       .all() as RunRow[];
 
     return rows.map((row) => ({
       id: row.id,
       startedAt: row.started_at,
-      searchCount: row.search_count
+      searchCount: row.search_count,
+      maxPages: row.max_pages
     }));
   }
 
@@ -174,11 +199,18 @@ export class Repository {
           search_profiles.name AS search_profile_name,
           search_profiles.keywords,
           search_profiles.remote,
-          run_targets.location
+          run_targets.location,
+          run_targets.max_pages,
+          run_targets.pages_captured,
+          run_targets.status,
+          run_targets.stop_reason,
+          run_targets.last_page_number,
+          run_targets.last_page_url,
+          run_targets.updated_at
         FROM run_targets
         INNER JOIN search_profiles ON search_profiles.id = run_targets.search_profile_id
         WHERE run_targets.run_id = ?
-        ORDER BY search_profiles.name ASC, run_targets.location ASC
+        ORDER BY search_profiles.name ASC, run_targets.location ASC, run_targets.id ASC
       `)
       .all(latestRun.id) as RunTargetRow[];
 
@@ -189,7 +221,14 @@ export class Repository {
       searchProfileName: row.search_profile_name,
       keywords: row.keywords,
       remote: Boolean(row.remote),
-      location: row.location
+      location: row.location,
+      maxPages: row.max_pages,
+      pagesCaptured: row.pages_captured,
+      status: row.status as RunTarget["status"],
+      stopReason: row.stop_reason,
+      lastPageNumber: row.last_page_number,
+      lastPageUrl: row.last_page_url,
+      updatedAt: row.updated_at
     }));
   }
 
@@ -203,7 +242,14 @@ export class Repository {
           search_profiles.name AS search_profile_name,
           search_profiles.keywords,
           search_profiles.remote,
-          run_targets.location
+          run_targets.location,
+          run_targets.max_pages,
+          run_targets.pages_captured,
+          run_targets.status,
+          run_targets.stop_reason,
+          run_targets.last_page_number,
+          run_targets.last_page_url,
+          run_targets.updated_at
         FROM run_targets
         INNER JOIN search_profiles ON search_profiles.id = run_targets.search_profile_id
         WHERE run_targets.id = ?
@@ -221,12 +267,53 @@ export class Repository {
       searchProfileName: row.search_profile_name,
       keywords: row.keywords,
       remote: Boolean(row.remote),
-      location: row.location
+      location: row.location,
+      maxPages: row.max_pages,
+      pagesCaptured: row.pages_captured,
+      status: row.status as RunTarget["status"],
+      stopReason: row.stop_reason,
+      lastPageNumber: row.last_page_number,
+      lastPageUrl: row.last_page_url,
+      updatedAt: row.updated_at
     };
+  }
+
+  updateRunTargetState(runTargetId: string, update: RunTargetStateUpdate): void {
+    const now = new Date().toISOString();
+    const clearStopReason = update.status === "capturing" || update.status === "pending" ? 1 : 0;
+    this.database
+      .prepare(`
+        UPDATE run_targets
+        SET
+          status = @status,
+          stop_reason = CASE
+            WHEN @clearStopReason = 1 THEN NULL
+            WHEN @stopReason IS NOT NULL THEN @stopReason
+            ELSE stop_reason
+          END,
+          pages_captured = CASE
+            WHEN @pageNumber IS NOT NULL AND @pageNumber > pages_captured THEN @pageNumber
+            ELSE pages_captured
+          END,
+          last_page_number = COALESCE(@pageNumber, last_page_number),
+          last_page_url = COALESCE(@pageUrl, last_page_url),
+          updated_at = @updatedAt
+        WHERE id = @runTargetId
+      `)
+      .run({
+        runTargetId,
+        status: update.status,
+        stopReason: update.stopReason ?? null,
+        pageNumber: update.pageNumber ?? null,
+        pageUrl: update.pageUrl ?? null,
+        updatedAt: now,
+        clearStopReason
+      });
   }
 
   ingestCapture(payload: CapturePayload): { inserted: number; updated: number } {
     const now = new Date().toISOString();
+    const pageNumber = payload.pageNumber ?? 1;
     let inserted = 0;
     let updated = 0;
     const runTarget = this.getRunTarget(payload.runTargetId);
@@ -271,6 +358,27 @@ export class Repository {
         SET last_seen_at = ?
         WHERE job_id = ? AND run_target_id = ?
       `);
+      const updateRunTargetProgress = this.database.prepare(`
+        UPDATE run_targets
+        SET
+          pages_captured = CASE
+            WHEN pages_captured > @pageNumber THEN pages_captured
+            ELSE @pageNumber
+          END,
+          status = 'capturing',
+          stop_reason = NULL,
+          last_page_number = @pageNumber,
+          last_page_url = @pageUrl,
+          updated_at = @updatedAt
+        WHERE id = @runTargetId
+      `);
+
+      updateRunTargetProgress.run({
+        pageNumber,
+        pageUrl: payload.pageUrl,
+        updatedAt: now,
+        runTargetId: payload.runTargetId
+      });
 
       for (const listing of payload.listings) {
         if (!listingMatchesRunLocation(listing.location, runTarget.location, runTarget.remote)) {
