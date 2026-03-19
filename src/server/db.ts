@@ -37,7 +37,16 @@ function ensureLinkabilityColumn(database: Database.Database): void {
   }
 }
 
+function ensureSearchProfileColumns(database: Database.Database): void {
+  if (!tableHasColumn(database, "search_profiles", "is_active")) {
+    database.exec("ALTER TABLE search_profiles ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1");
+  }
+}
+
 function ensureRunColumns(database: Database.Database): void {
+  if (!tableHasColumn(database, "runs", "retention_mode")) {
+    database.exec("ALTER TABLE runs ADD COLUMN retention_mode TEXT NOT NULL DEFAULT 'reset'");
+  }
   if (!tableHasColumn(database, "runs", "max_pages")) {
     database.exec("ALTER TABLE runs ADD COLUMN max_pages INTEGER NOT NULL DEFAULT 1");
   }
@@ -126,6 +135,7 @@ export function createDatabase(dbPath: string): Database.Database {
       keywords TEXT NOT NULL,
       location TEXT NOT NULL DEFAULT '',
       remote INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -137,6 +147,7 @@ export function createDatabase(dbPath: string): Database.Database {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       started_at TEXT NOT NULL,
       search_count INTEGER NOT NULL,
+      retention_mode TEXT NOT NULL DEFAULT 'reset',
       run_mode TEXT NOT NULL DEFAULT 'fixed',
       max_pages INTEGER NOT NULL DEFAULT 1,
       zero_new_jobs_threshold INTEGER NOT NULL DEFAULT 2,
@@ -196,6 +207,7 @@ export function createDatabase(dbPath: string): Database.Database {
       FOREIGN KEY (run_target_id) REFERENCES run_targets(id) ON DELETE CASCADE
     );
   `);
+  ensureSearchProfileColumns(database);
   ensureLinkabilityColumn(database);
   ensureRunColumns(database);
   ensureRunTargetColumns(database);

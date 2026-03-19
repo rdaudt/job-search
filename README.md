@@ -11,6 +11,7 @@ Current scope: the app is restricted to Canadian locations and uses `ca.indeed.c
 - Opens search tabs sequentially with configurable pacing and jitter between launches.
 - Captures visible results from the active Indeed results page through a browser extension action.
 - Follows the next results page in the same tab using either a fixed page cap or an auto-stop mode with guardrails and configurable next-page pacing.
+- Lets each run choose whether previously captured jobs are kept cumulatively or deleted before the new run starts.
 - Stores jobs in local SQLite with deduplication and status tracking.
 - Exports the current deduplicated job list as CSV.
 
@@ -66,15 +67,18 @@ npm start
 8. Choose a run mode:
    - `Fixed pages`: stop after the selected page cap
    - `Auto until stop`: keep paginating until a stop rule fires
-9. Set either:
+9. Choose a retention mode:
+   - `Cumulative run`: keep existing jobs and update them if they appear again
+   - `Reset previous jobs`: delete all previously captured jobs before starting this run
+10. Set either:
    - `Pages per search` for fixed mode
    - `Auto stop after this many zero-new pages` for auto mode
-10. Optionally tune pacing:
+11. Optionally tune pacing:
    - `Delay between launched searches` and `Launch jitter`
    - `Delay before next results page` and `Next-page jitter`
-11. Click `Open Indeed Searches`.
-12. If run locations are provided in the UI, each imported search profile will run against each entered location. If the textarea is blank, the app falls back to each profile's default `location`.
-13. Indeed result tabs auto-capture after the page settles. In auto mode, the extension stops on no next page, repeated result URLs, verification/sign-in blocks, the zero-new threshold, or the hard 50-page emergency cap. Manual extension click remains available if needed.
+12. Click `Open Indeed Searches`.
+13. If run locations are provided in the UI, each imported search profile will run against each entered location. If the textarea is blank, the app falls back to each profile's default `location`.
+14. Indeed result tabs auto-capture after the page settles. In auto mode, the extension stops on no next page, repeated result URLs, verification/sign-in blocks, the zero-new threshold, or the hard 50-page emergency cap. Manual extension click remains available if needed.
 
 ## Playwright With The Extension
 
@@ -107,3 +111,4 @@ The script keeps the browser open until `Ctrl+C`. Make sure the app is already r
 - Review jobs now preserve both the matching search profiles and the run locations that produced each job.
 - The latest run card shows per-target progress including mode, pages captured, current status, and stop reason.
 - Sequential launch pacing and next-page pacing are intended to reduce bursty automation patterns, but Indeed can still block pagination for some searches or sessions.
+- Importing a different search file changes the active search profiles for the next run, but cumulative mode keeps previously captured jobs unless you explicitly choose `Reset previous jobs`.

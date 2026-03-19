@@ -39,6 +39,15 @@
           <button id="run-searches" type="button">Open Indeed Searches</button>
         </div>
         <div class="stack stack-vertical">
+          <label class="field-label" for="retention-mode">Retention mode</label>
+          <select id="retention-mode">
+            <option value="cumulative">Cumulative run</option>
+            <option value="reset">Reset previous jobs</option>
+          </select>
+          <p class="helper">
+            Cumulative keeps existing jobs and updates matches when the same job appears again.
+            Reset deletes all previously captured jobs before this run starts.
+          </p>
           <label class="field-label" for="run-mode">Run mode</label>
           <select id="run-mode">
             <option value="fixed">Fixed pages</option>

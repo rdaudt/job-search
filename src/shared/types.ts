@@ -6,6 +6,8 @@ export const runTargetStatusValues = ["pending", "capturing", "completed", "fail
 export type RunTargetStatus = (typeof runTargetStatusValues)[number];
 export const runModeValues = ["fixed", "auto"] as const;
 export type RunMode = (typeof runModeValues)[number];
+export const runRetentionModeValues = ["reset", "cumulative"] as const;
+export type RunRetentionMode = (typeof runRetentionModeValues)[number];
 export const DEFAULT_FIXED_MAX_PAGES = 3;
 export const DEFAULT_AUTO_ZERO_NEW_JOBS_THRESHOLD = 2;
 export const DEFAULT_EMERGENCY_MAX_PAGES = 50;
@@ -50,6 +52,7 @@ export type RunRecord = {
   id: number;
   startedAt: string;
   searchCount: number;
+  retentionMode: RunRetentionMode;
   runMode: RunMode;
   maxPages: number;
   zeroNewJobsThreshold: number;
@@ -95,6 +98,7 @@ export type RunTargetStateUpdate = z.infer<typeof runTargetStateUpdateSchema>;
 
 export const runRequestSchema = z.object({
   locations: z.array(z.string()).optional().default([]),
+  retentionMode: z.enum(runRetentionModeValues).optional().default("cumulative"),
   mode: z.enum(runModeValues).optional().default("fixed"),
   maxPages: z.number().int().min(1).optional().default(DEFAULT_FIXED_MAX_PAGES),
   zeroNewJobsThreshold: z

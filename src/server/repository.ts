@@ -7,6 +7,7 @@ import type {
   JobStatus,
   PersistedSearchProfile,
   RunMode,
+  RunRetentionMode,
   RunTarget,
   RunRecord,
   RunTargetStateUpdate,
@@ -37,6 +38,7 @@ type RunRow = {
   id: number;
   started_at: string;
   search_count: number;
+  retention_mode: RunRetentionMode;
   run_mode: RunMode;
   max_pages: number;
   zero_new_jobs_threshold: number;
@@ -53,6 +55,7 @@ type SearchRow = {
   keywords: string;
   location: string;
   remote: number;
+  is_active: number;
   created_at: string;
   updated_at: string;
 };
@@ -86,6 +89,7 @@ type RunTargetTemplate = Pick<
   "id" | "searchProfileId" | "searchProfileName" | "keywords" | "remote" | "location"
 >;
 type RunConfig = {
+  retentionMode: RunRetentionMode;
   runMode: RunMode;
   maxPages: number;
   zeroNewJobsThreshold: number;
@@ -105,18 +109,21 @@ export class Repository {
   replaceSearchProfiles(searchProfiles: SearchProfile[]): void {
     const now = new Date().toISOString();
     const transaction = this.database.transaction((profiles: SearchProfile[]) => {
-      this.database.prepare("DELETE FROM job_search_matches").run();
-      this.database.prepare("DELETE FROM run_targets").run();
-      this.database.prepare("DELETE FROM jobs").run();
-      this.database.prepare("DELETE FROM runs").run();
-      this.database.prepare("DELETE FROM search_profiles").run();
-      const insert = this.database.prepare(`
-        INSERT INTO search_profiles (id, name, keywords, location, remote, created_at, updated_at)
-        VALUES (@id, @name, @keywords, @location, @remote, @createdAt, @updatedAt)
+      this.database.prepare("UPDATE search_profiles SET is_active = 0, updated_at = ?").run(now);
+      const upsert = this.database.prepare(`
+        INSERT INTO search_profiles (id, name, keywords, location, remote, is_active, created_at, updated_at)
+        VALUES (@id, @name, @keywords, @location, @remote, 1, @createdAt, @updatedAt)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          keywords = excluded.keywords,
+          location = excluded.location,
+          remote = excluded.remote,
+          is_active = 1,
+          updated_at = excluded.updated_at
       `);
 
       for (const profile of profiles) {
-        insert.run({
+        upsert.run({
           id: profile.id,
           name: profile.name,
           keywords: profile.keywords,
@@ -133,7 +140,7 @@ export class Repository {
 
   listSearchProfiles(): PersistedSearchProfile[] {
     const rows = this.database
-      .prepare("SELECT * FROM search_profiles ORDER BY name ASC")
+      .prepare("SELECT * FROM search_profiles WHERE is_active = 1 ORDER BY name ASC")
       .all() as SearchRow[];
 
     return rows.map((row) => ({
@@ -153,14 +160,15 @@ export class Repository {
       const runResult = this.database
         .prepare(`
           INSERT INTO runs (
-            started_at, search_count, run_mode, max_pages, zero_new_jobs_threshold, emergency_max_pages,
+            started_at, search_count, retention_mode, run_mode, max_pages, zero_new_jobs_threshold, emergency_max_pages,
             search_launch_delay_ms, search_launch_jitter_ms, page_delay_ms, page_delay_jitter_ms
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           startedAt,
           templates.length,
+          runConfig.retentionMode,
           runConfig.runMode,
           runConfig.maxPages,
           runConfig.zeroNewJobsThreshold,
@@ -207,6 +215,7 @@ export class Repository {
           id: runId,
           startedAt,
           searchCount: templates.length,
+          retentionMode: runConfig.retentionMode,
           runMode: runConfig.runMode,
           maxPages: runConfig.maxPages,
           zeroNewJobsThreshold: runConfig.zeroNewJobsThreshold,
@@ -247,6 +256,7 @@ export class Repository {
           id,
           started_at,
           search_count,
+          retention_mode,
           run_mode,
           max_pages,
           zero_new_jobs_threshold,
@@ -264,6 +274,7 @@ export class Repository {
       id: row.id,
       startedAt: row.started_at,
       searchCount: row.search_count,
+      retentionMode: row.retention_mode,
       runMode: row.run_mode,
       maxPages: row.max_pages,
       zeroNewJobsThreshold: row.zero_new_jobs_threshold,
@@ -395,6 +406,17 @@ export class Repository {
       lastPageUrl: row.last_page_url,
       updatedAt: row.updated_at
     };
+  }
+
+  resetCapturedData(): void {
+    const transaction = this.database.transaction(() => {
+      this.database.prepare("DELETE FROM job_search_matches").run();
+      this.database.prepare("DELETE FROM run_targets").run();
+      this.database.prepare("DELETE FROM jobs").run();
+      this.database.prepare("DELETE FROM runs").run();
+    });
+
+    transaction();
   }
 
   updateRunTargetState(runTargetId: string, update: RunTargetStateUpdate): void {

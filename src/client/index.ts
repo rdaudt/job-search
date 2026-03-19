@@ -5,6 +5,7 @@ const searchFileInput = document.querySelector<HTMLInputElement>("#search-file")
 const searchCount = document.querySelector<HTMLElement>("#search-count");
 const searchList = document.querySelector<HTMLElement>("#search-list");
 const runSearchesButton = document.querySelector<HTMLButtonElement>("#run-searches");
+const retentionModeInput = document.querySelector<HTMLSelectElement>("#retention-mode");
 const runModeInput = document.querySelector<HTMLSelectElement>("#run-mode");
 const runModeHelper = document.querySelector<HTMLElement>("#run-mode-helper");
 const maxPagesInput = document.querySelector<HTMLSelectElement>("#max-pages");
@@ -20,6 +21,7 @@ const jobsBody = document.querySelector<HTMLElement>("#jobs-body");
 const toast = document.querySelector<HTMLElement>("#toast");
 const SUMMARY_REFRESH_INTERVAL_MS = 4000;
 const RUN_LOCATIONS_STORAGE_KEY = "job-search-finder-run-locations";
+const RETENTION_MODE_STORAGE_KEY = "job-search-finder-retention-mode";
 const RUN_MODE_STORAGE_KEY = "job-search-finder-run-mode";
 const MAX_PAGES_STORAGE_KEY = "job-search-finder-max-pages";
 const ZERO_NEW_THRESHOLD_STORAGE_KEY = "job-search-finder-zero-new-threshold";
@@ -169,6 +171,9 @@ function renderRuns(runs: RunRecord[], latestRunTargets: RunTarget[]): void {
             Opened ${run.searchCount} search URL${run.searchCount === 1 ? "" : "s"} in ${run.runMode === "auto" ? "auto until stop" : "fixed pages"} mode
           </p>
           <p class="run-meta">
+            ${run.retentionMode === "cumulative" ? "Cumulative run" : "Reset previous jobs"}
+          </p>
+          <p class="run-meta">
             ${
               run.runMode === "auto"
                 ? `Stop after ${run.zeroNewJobsThreshold} consecutive zero-new pages, emergency cap ${run.emergencyMaxPages}`
@@ -314,6 +319,7 @@ importForm?.addEventListener("submit", async (event) => {
 
 runSearchesButton?.addEventListener("click", async () => {
   const locations = renderRunLocationPreview();
+  const retentionMode = retentionModeInput?.value === "reset" ? "reset" : "cumulative";
   const mode = runModeInput?.value === "auto" ? "auto" : "fixed";
   const maxPages = Math.max(1, Number(maxPagesInput?.value ?? "1") || 1);
   const zeroNewJobsThreshold = Math.max(1, Number(zeroNewJobsThresholdInput?.value ?? "2") || 2);
@@ -328,6 +334,7 @@ runSearchesButton?.addEventListener("click", async () => {
     },
     body: JSON.stringify({
       locations,
+      retentionMode,
       mode,
       maxPages,
       zeroNewJobsThreshold,
@@ -344,6 +351,10 @@ runSearchesButton?.addEventListener("click", async () => {
   }
   showToast("Queued search tabs.");
   await loadSummary();
+});
+
+retentionModeInput?.addEventListener("change", () => {
+  localStorage.setItem(RETENTION_MODE_STORAGE_KEY, retentionModeInput.value);
 });
 
 runLocationsInput?.addEventListener("input", () => {
@@ -391,6 +402,10 @@ if (maxPagesInput) {
 
 if (runModeInput) {
   runModeInput.value = localStorage.getItem(RUN_MODE_STORAGE_KEY) ?? "fixed";
+}
+
+if (retentionModeInput) {
+  retentionModeInput.value = localStorage.getItem(RETENTION_MODE_STORAGE_KEY) ?? "cumulative";
 }
 
 if (zeroNewJobsThresholdInput) {

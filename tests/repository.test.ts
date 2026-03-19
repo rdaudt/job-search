@@ -47,6 +47,7 @@ describe("Repository", () => {
     ]);
     const searches = repository.listSearchProfiles();
     const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
       runMode: "fixed",
       maxPages: 2,
       zeroNewJobsThreshold: 2,
@@ -95,6 +96,7 @@ describe("Repository", () => {
     ]);
     const searches = repository.listSearchProfiles();
     const { targets } = repository.createRun(buildRunTargetTemplates(searches, ["Vancouver, BC", "Burnaby, BC"]), {
+      retentionMode: "cumulative",
       runMode: "fixed",
       maxPages: 3,
       zeroNewJobsThreshold: 2,
@@ -142,6 +144,7 @@ describe("Repository", () => {
     ]);
     const searches = repository.listSearchProfiles();
     const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
       runMode: "fixed",
       maxPages: 2,
       zeroNewJobsThreshold: 2,
@@ -185,6 +188,7 @@ describe("Repository", () => {
     ]);
     const searches = repository.listSearchProfiles();
     const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
       runMode: "fixed",
       maxPages: 2,
       zeroNewJobsThreshold: 2,
@@ -236,6 +240,7 @@ describe("Repository", () => {
 
     const searches = repository.listSearchProfiles();
     const { run, targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
       runMode: "fixed",
       maxPages: 3,
       zeroNewJobsThreshold: 2,
@@ -246,6 +251,7 @@ describe("Repository", () => {
       pageDelayJitterMs: 12_000
     });
     expect(run.maxPages).toBe(3);
+    expect(run.retentionMode).toBe("cumulative");
     expect(run.runMode).toBe("fixed");
 
     repository.ingestCapture({
@@ -292,6 +298,7 @@ describe("Repository", () => {
 
     const searches = repository.listSearchProfiles();
     const { run, targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
       runMode: "auto",
       maxPages: 3,
       zeroNewJobsThreshold: 2,
@@ -303,6 +310,7 @@ describe("Repository", () => {
     });
 
     expect(run.runMode).toBe("auto");
+    expect(run.retentionMode).toBe("cumulative");
     expect(run.zeroNewJobsThreshold).toBe(2);
     expect(run.emergencyMaxPages).toBe(50);
     expect(run.searchLaunchDelayMs).toBe(20_000);
@@ -312,5 +320,102 @@ describe("Repository", () => {
     expect(targets[0].emergencyMaxPages).toBe(50);
     expect(targets[0].searchLaunchJitterMs).toBe(20_000);
     expect(targets[0].pageDelayMs).toBe(8_000);
+  });
+
+  it("keeps captured jobs across search imports until a reset run is requested", () => {
+    const repository = createRepository();
+    repository.replaceSearchProfiles([
+      {
+        id: "frontend",
+        name: "Frontend",
+        keywords: "frontend engineer",
+        location: "Vancouver, BC",
+        remote: false
+      }
+    ]);
+
+    let searches = repository.listSearchProfiles();
+    let run = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
+      runMode: "fixed",
+      maxPages: 2,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
+
+    repository.ingestCapture({
+      source: "indeed",
+      runTargetId: run.targets[0].id,
+      pageUrl: "https://ca.indeed.com/jobs?q=frontend+engineer&l=Vancouver%2C+BC",
+      listings: [
+        {
+          sourceJobId: "jk-keep",
+          url: "https://ca.indeed.com/viewjob?jk=jk-keep",
+          title: "Frontend Engineer",
+          company: "Acme",
+          location: "Vancouver, BC"
+        }
+      ]
+    });
+
+    const savedJob = repository.listJobs()[0];
+    repository.updateJobStatus(savedJob.id, "saved");
+
+    repository.replaceSearchProfiles([
+      {
+        id: "backend",
+        name: "Backend",
+        keywords: "backend engineer",
+        location: "Toronto, ON",
+        remote: false
+      }
+    ]);
+
+    let jobs = repository.listJobs();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].status).toBe("saved");
+    expect(jobs[0].matchingSearchProfiles).toEqual(["Frontend"]);
+
+    searches = repository.listSearchProfiles();
+    run = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
+      runMode: "fixed",
+      maxPages: 2,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
+
+    repository.ingestCapture({
+      source: "indeed",
+      runTargetId: run.targets[0].id,
+      pageUrl: "https://ca.indeed.com/jobs?q=frontend+engineer&l=Toronto%2C+ON",
+      listings: [
+        {
+          sourceJobId: "jk-keep",
+          url: "https://ca.indeed.com/viewjob?jk=jk-keep",
+          title: "Frontend Engineer",
+          company: "Acme",
+          location: "Toronto, ON"
+        }
+      ]
+    });
+
+    jobs = repository.listJobs();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].status).toBe("saved");
+    expect(jobs[0].matchingSearchProfiles).toEqual(["Backend", "Frontend"]);
+
+    repository.resetCapturedData();
+    expect(repository.listJobs()).toHaveLength(0);
+    expect(repository.listRuns()).toHaveLength(0);
+    expect(repository.listSearchProfiles()).toHaveLength(1);
   });
 });

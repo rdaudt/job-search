@@ -13,7 +13,8 @@ import {
   statusValues,
   type AppSummary,
   type JobStatus,
-  type RunMode
+  type RunMode,
+  type RunRetentionMode
 } from "../shared/types.js";
 import { openSearchUrls } from "./browser.js";
 import { createDatabase, ensureDataDir } from "./db.js";
@@ -51,6 +52,7 @@ function getSummary(): AppSummary {
 }
 
 function normalizeRunConfig(rawBody: unknown): {
+  retentionMode: RunRetentionMode;
   mode: RunMode;
   maxPages: number;
   zeroNewJobsThreshold: number;
@@ -61,6 +63,7 @@ function normalizeRunConfig(rawBody: unknown): {
   pageDelayJitterMs: number;
 } {
   const parsed = runRequestSchema.parse(rawBody ?? {});
+  const retentionMode = parsed.retentionMode;
   const mode = parsed.mode;
   const maxPages = Math.min(Math.max(parsed.maxPages, 1), MAX_FIXED_PAGES_LIMIT);
   const zeroNewJobsThreshold = Math.min(
@@ -75,6 +78,7 @@ function normalizeRunConfig(rawBody: unknown): {
   if (mode === "auto") {
     return {
       mode,
+      retentionMode,
       maxPages: DEFAULT_FIXED_MAX_PAGES,
       zeroNewJobsThreshold,
       emergencyMaxPages: EMERGENCY_MAX_PAGES,
@@ -87,6 +91,7 @@ function normalizeRunConfig(rawBody: unknown): {
 
   return {
     mode,
+    retentionMode,
     maxPages,
     zeroNewJobsThreshold: DEFAULT_AUTO_ZERO_NEW_JOBS_THRESHOLD,
     emergencyMaxPages: EMERGENCY_MAX_PAGES,
@@ -130,7 +135,11 @@ app.post("/api/runs", async (req, res) => {
     const requestedLocations = normalizeRunLocations(Array.isArray(req.body?.locations) ? req.body.locations : []);
     const runTargetTemplates = buildRunTargetTemplates(searches, requestedLocations);
     const runConfig = normalizeRunConfig(req.body);
+    if (runConfig.retentionMode === "reset") {
+      repository.resetCapturedData();
+    }
     const { run, targets } = repository.createRun(runTargetTemplates, {
+      retentionMode: runConfig.retentionMode,
       runMode: runConfig.mode,
       maxPages: runConfig.maxPages,
       zeroNewJobsThreshold: runConfig.zeroNewJobsThreshold,
