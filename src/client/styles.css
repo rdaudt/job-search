@@ -77,6 +77,12 @@ h1 {
   align-items: center;
 }
 
+.panel-subtitle {
+  margin: 8px 0 0;
+  color: var(--muted);
+  max-width: 640px;
+}
+
 .panel-meta,
 .helper,
 .empty-state,
@@ -127,8 +133,27 @@ textarea {
   resize: vertical;
 }
 
-button,
 select,
+input[type="text"],
+input[type="number"] {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(31, 42, 31, 0.16);
+  border-radius: 14px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+}
+
+select:disabled,
+textarea:disabled,
+input:disabled {
+  background: rgba(31, 42, 31, 0.04);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+button,
 a.button-link {
   appearance: none;
   border: none;
@@ -143,7 +168,7 @@ a.button-link {
 }
 
 button:hover,
-select:hover {
+a.button-link:hover {
   background: var(--accent-strong);
   transform: translateY(-1px);
 }
@@ -159,6 +184,116 @@ a {
   display: grid;
   gap: 12px;
   margin-top: 16px;
+}
+
+.run-layout {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.95fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.run-setup {
+  display: grid;
+  gap: 14px;
+}
+
+.run-section-card,
+.run-summary-card,
+.run-history-section {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.run-section-card-advanced {
+  margin-top: 12px;
+}
+
+.section-title {
+  margin: 0 0 14px;
+  font-size: 1rem;
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.form-field {
+  display: grid;
+  gap: 8px;
+}
+
+.form-field textarea {
+  min-height: 112px;
+}
+
+.field-note {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.advanced-options {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.advanced-options summary {
+  padding: 16px 18px;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+.advanced-options summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-options summary::after {
+  content: "+";
+  float: right;
+  color: var(--muted);
+}
+
+.advanced-options[open] summary::after {
+  content: "−";
+}
+
+.run-summary-list {
+  margin: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.run-summary-row {
+  display: grid;
+  gap: 4px;
+}
+
+.run-summary-row dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.run-summary-row dd {
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.subsection-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: baseline;
 }
 
 .search-card,
@@ -477,11 +612,17 @@ th {
     align-items: flex-start;
   }
 
-  .stack {
-    align-items: flex-start;
+  .run-layout,
+  .control-grid {
+    grid-template-columns: 1fr;
   }
 
   .run-target-item {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .subsection-header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

@@ -35,108 +35,170 @@
 
       <section class="panel">
         <div class="panel-header">
-          <h2>2. Run Searches</h2>
+          <div>
+            <h2>2. Run Searches</h2>
+            <p class="panel-subtitle">Set up a run, launch the search tabs, and monitor recent activity.</p>
+          </div>
           <button id="run-searches" type="button">Open Indeed Searches</button>
         </div>
-        <div class="stack stack-vertical">
-          <label class="field-label" for="retention-mode">Retention mode</label>
-          <select id="retention-mode">
-            <option value="cumulative">Cumulative run</option>
-            <option value="reset">Reset previous jobs</option>
-          </select>
-          <p class="helper">
-            Cumulative keeps existing jobs and updates matches when the same job appears again.
-            Reset deletes all previously captured jobs before this run starts.
-          </p>
-          <label class="field-label" for="run-mode">Run mode</label>
-          <select id="run-mode">
-            <option value="fixed">Fixed pages</option>
-            <option value="auto">Auto until stop</option>
-          </select>
-          <p id="run-mode-helper" class="helper">
-            Fixed pages stops at a chosen page cap. Auto until stop follows pagination until a stop
-            rule fires.
-          </p>
-          <label class="field-label" for="max-pages">Pages per search</label>
-          <select id="max-pages">
-            <option value="1">1 page</option>
-            <option value="2">2 pages</option>
-            <option value="3">3 pages</option>
-            <option value="4">4 pages</option>
-            <option value="5">5 pages</option>
-          </select>
-          <p class="helper">
-            The extension will capture page 1, move to the next results page in the same tab, and
-            stop when it reaches this limit or when Indeed has no next page.
-          </p>
-          <label class="field-label" for="zero-new-jobs-threshold">Auto stop after this many zero-new pages</label>
-          <select id="zero-new-jobs-threshold">
-            <option value="1">1 page</option>
-            <option value="2">2 pages</option>
-            <option value="3">3 pages</option>
-            <option value="4">4 pages</option>
-            <option value="5">5 pages</option>
-          </select>
-          <p class="helper">
-            In auto mode, the extension stops after this many consecutive pages that add no new
-            jobs. A hard emergency ceiling of 50 pages still applies.
-          </p>
-          <label class="field-label" for="search-launch-delay">Delay between launched searches</label>
-          <select id="search-launch-delay">
-            <option value="0">0s</option>
-            <option value="10000">10s</option>
-            <option value="15000">15s</option>
-            <option value="20000">20s</option>
-            <option value="30000">30s</option>
-          </select>
-          <label class="field-label" for="search-launch-jitter">Launch jitter</label>
-          <select id="search-launch-jitter">
-            <option value="0">0s</option>
-            <option value="5000">5s</option>
-            <option value="10000">10s</option>
-            <option value="20000">20s</option>
-            <option value="30000">30s</option>
-          </select>
-          <p class="helper">
-            Searches open sequentially. The app waits the base delay plus up to the selected jitter
-            before opening the next search tab.
-          </p>
-          <label class="field-label" for="page-delay">Delay before next results page</label>
-          <select id="page-delay">
-            <option value="0">0s</option>
-            <option value="5000">5s</option>
-            <option value="8000">8s</option>
-            <option value="10000">10s</option>
-            <option value="15000">15s</option>
-          </select>
-          <label class="field-label" for="page-delay-jitter">Next-page jitter</label>
-          <select id="page-delay-jitter">
-            <option value="0">0s</option>
-            <option value="5000">5s</option>
-            <option value="10000">10s</option>
-            <option value="12000">12s</option>
-            <option value="20000">20s</option>
-          </select>
-          <p class="helper">
-            After a successful capture, the extension waits this long plus jitter before opening
-            the next Indeed results page.
-          </p>
-          <label class="field-label" for="run-locations">Run locations</label>
-          <textarea
-            id="run-locations"
-            rows="4"
-            placeholder="Vancouver, BC&#10;Burnaby, BC&#10;Richmond, BC"
-          ></textarea>
-          <p id="run-location-preview" class="helper">
-            Leave blank to use each imported profile's default location.
-          </p>
-          <p class="helper">Canadian locations only.</p>
+        <div class="run-layout">
+          <div class="run-setup">
+            <div class="run-section-card">
+              <h3 class="section-title">Basic setup</h3>
+              <div class="control-grid">
+                <label class="form-field" for="retention-mode">
+                  <span class="field-label">Retention mode</span>
+                  <select id="retention-mode">
+                    <option value="cumulative">Cumulative run</option>
+                    <option value="reset">Reset previous jobs</option>
+                  </select>
+                  <span class="field-note">Keep existing jobs or clear them before starting this run.</span>
+                </label>
+
+                <label class="form-field" for="run-mode">
+                  <span class="field-label">Run mode</span>
+                  <select id="run-mode">
+                    <option value="fixed">Fixed pages</option>
+                    <option value="auto">Auto until stop</option>
+                  </select>
+                  <span id="run-mode-helper" class="field-note">
+                    Fixed pages stops at a chosen page cap. Auto until stop follows pagination until a stop
+                    rule fires.
+                  </span>
+                </label>
+              </div>
+
+              <label class="form-field" for="run-locations">
+                <span class="field-label">Run locations</span>
+                <textarea
+                  id="run-locations"
+                  rows="4"
+                  placeholder="Vancouver, BC&#10;Burnaby, BC&#10;Richmond, BC"
+                ></textarea>
+                <span id="run-location-preview" class="field-note">
+                  Leave blank to use each imported profile's default location.
+                </span>
+              </label>
+              <p class="helper">Canadian locations only.</p>
+            </div>
+
+            <details class="advanced-options">
+              <summary>Advanced options</summary>
+              <div class="run-section-card run-section-card-advanced">
+                <div class="control-grid">
+                  <label id="max-pages-field" class="form-field" for="max-pages">
+                    <span class="field-label">Pages per search</span>
+                    <select id="max-pages">
+                      <option value="1">1 page</option>
+                      <option value="2">2 pages</option>
+                      <option value="3">3 pages</option>
+                      <option value="4">4 pages</option>
+                      <option value="5">5 pages</option>
+                    </select>
+                    <span class="field-note">Capture page 1 and keep paginating up to this limit.</span>
+                  </label>
+
+                  <label id="zero-new-jobs-threshold-field" class="form-field" for="zero-new-jobs-threshold">
+                    <span class="field-label">Auto stop after this many zero-new pages</span>
+                    <select id="zero-new-jobs-threshold">
+                      <option value="1">1 page</option>
+                      <option value="2">2 pages</option>
+                      <option value="3">3 pages</option>
+                      <option value="4">4 pages</option>
+                      <option value="5">5 pages</option>
+                    </select>
+                    <span class="field-note">Auto mode stops after this many consecutive pages add no new jobs.</span>
+                  </label>
+
+                  <label class="form-field" for="search-launch-delay">
+                    <span class="field-label">Delay between launched searches</span>
+                    <select id="search-launch-delay">
+                      <option value="0">0s</option>
+                      <option value="10000">10s</option>
+                      <option value="15000">15s</option>
+                      <option value="20000">20s</option>
+                      <option value="30000">30s</option>
+                    </select>
+                  </label>
+
+                  <label class="form-field" for="search-launch-jitter">
+                    <span class="field-label">Launch jitter</span>
+                    <select id="search-launch-jitter">
+                      <option value="0">0s</option>
+                      <option value="5000">5s</option>
+                      <option value="10000">10s</option>
+                      <option value="20000">20s</option>
+                      <option value="30000">30s</option>
+                    </select>
+                  </label>
+
+                  <label class="form-field" for="page-delay">
+                    <span class="field-label">Delay before next results page</span>
+                    <select id="page-delay">
+                      <option value="0">0s</option>
+                      <option value="5000">5s</option>
+                      <option value="8000">8s</option>
+                      <option value="10000">10s</option>
+                      <option value="15000">15s</option>
+                    </select>
+                  </label>
+
+                  <label class="form-field" for="page-delay-jitter">
+                    <span class="field-label">Next-page jitter</span>
+                    <select id="page-delay-jitter">
+                      <option value="0">0s</option>
+                      <option value="5000">5s</option>
+                      <option value="10000">10s</option>
+                      <option value="12000">12s</option>
+                      <option value="20000">20s</option>
+                    </select>
+                  </label>
+                </div>
+                <p class="helper">
+                  Use these controls only if you need to tune pagination behavior or pacing. Auto mode
+                  still respects the 50-page emergency ceiling.
+                </p>
+              </div>
+            </details>
+          </div>
+
+          <aside class="run-summary-card">
+            <h3 class="section-title">This run</h3>
+            <dl class="run-summary-list">
+              <div class="run-summary-row">
+                <dt>Imported profiles</dt>
+                <dd id="run-summary-profiles">0</dd>
+              </div>
+              <div class="run-summary-row">
+                <dt>Location scope</dt>
+                <dd id="run-summary-locations">Profile defaults</dd>
+              </div>
+              <div class="run-summary-row">
+                <dt>Retention</dt>
+                <dd id="run-summary-retention">Cumulative run</dd>
+              </div>
+              <div class="run-summary-row">
+                <dt>Pagination</dt>
+                <dd id="run-summary-pagination">Fixed pages</dd>
+              </div>
+              <div class="run-summary-row">
+                <dt>Pacing</dt>
+                <dd id="run-summary-pacing">Launch 20s + jitter, next page 8s + jitter</dd>
+              </div>
+            </dl>
+            <p class="helper">
+              The app opens one browser tab per search target and the extension captures results in the
+              same tab.
+            </p>
+          </aside>
         </div>
-        <p class="helper">
-          This opens one browser tab per search target. The extension auto-captures the visible
-          page and follows the next page in the same tab based on the selected run mode.
-        </p>
-        <div id="runs" class="runs empty-state">No runs yet.</div>
+        <div class="run-history-section">
+          <div class="subsection-header">
+            <h3 class="section-title">Recent runs</h3>
+            <p class="helper">Review the latest run activity and page-by-page stop reasons.</p>
+          </div>
+          <div id="runs" class="runs empty-state">No runs yet.</div>
+        </div>
       </section>
 
       <section class="panel">

@@ -22,7 +22,9 @@ const runSearchesButton = document.querySelector<HTMLButtonElement>("#run-search
 const retentionModeInput = document.querySelector<HTMLSelectElement>("#retention-mode");
 const runModeInput = document.querySelector<HTMLSelectElement>("#run-mode");
 const runModeHelper = document.querySelector<HTMLElement>("#run-mode-helper");
+const maxPagesField = document.querySelector<HTMLElement>("#max-pages-field");
 const maxPagesInput = document.querySelector<HTMLSelectElement>("#max-pages");
+const zeroNewJobsThresholdField = document.querySelector<HTMLElement>("#zero-new-jobs-threshold-field");
 const zeroNewJobsThresholdInput = document.querySelector<HTMLSelectElement>("#zero-new-jobs-threshold");
 const searchLaunchDelayInput = document.querySelector<HTMLSelectElement>("#search-launch-delay");
 const searchLaunchJitterInput = document.querySelector<HTMLSelectElement>("#search-launch-jitter");
@@ -30,6 +32,11 @@ const pageDelayInput = document.querySelector<HTMLSelectElement>("#page-delay");
 const pageDelayJitterInput = document.querySelector<HTMLSelectElement>("#page-delay-jitter");
 const runLocationsInput = document.querySelector<HTMLTextAreaElement>("#run-locations");
 const runLocationPreview = document.querySelector<HTMLElement>("#run-location-preview");
+const runSummaryProfiles = document.querySelector<HTMLElement>("#run-summary-profiles");
+const runSummaryLocations = document.querySelector<HTMLElement>("#run-summary-locations");
+const runSummaryRetention = document.querySelector<HTMLElement>("#run-summary-retention");
+const runSummaryPagination = document.querySelector<HTMLElement>("#run-summary-pagination");
+const runSummaryPacing = document.querySelector<HTMLElement>("#run-summary-pacing");
 const runsContainer = document.querySelector<HTMLElement>("#runs");
 const guidanceInput = document.querySelector<HTMLTextAreaElement>("#relevance-guidance");
 const saveGuidanceButton = document.querySelector<HTMLButtonElement>("#save-guidance");
@@ -70,6 +77,7 @@ const overrideDrafts = new Map<number, { relevance: string; note: string }>();
 const expandedExplanationJobIds = new Set<number>();
 let previousAiPendingCount = 0;
 let currentJobs: JobRecord[] = [];
+let currentSearchProfiles: PersistedSearchProfile[] = [];
 
 function showToast(message: string): void {
   if (!toast) {
@@ -104,10 +112,12 @@ function renderRunLocationPreview(): string[] {
   runLocationPreview.textContent = locations.length
     ? `This run will open each imported search across ${locations.length} location${locations.length === 1 ? "" : "s"}: ${locations.join(", ")}`
     : "Leave blank to use each imported profile's default location.";
+  renderRunSummary();
   return locations;
 }
 
 function renderSearches(searches: PersistedSearchProfile[]): void {
+  currentSearchProfiles = searches;
   if (!searchCount || !searchList) {
     return;
   }
@@ -157,6 +167,32 @@ function renderGuidance(guidance: string): void {
   if (guidanceInput) {
     guidanceInput.value = guidanceDraft ?? guidance;
   }
+}
+
+function renderRunSummary(): void {
+  if (!runSummaryProfiles || !runSummaryLocations || !runSummaryRetention || !runSummaryPagination || !runSummaryPacing) {
+    return;
+  }
+
+  const locationCount = parseRunLocations(runLocationsInput?.value ?? "").length;
+  const runMode = runModeInput?.value === "auto" ? "auto" : "fixed";
+  const retentionMode = retentionModeInput?.value === "reset" ? "reset" : "cumulative";
+  const maxPages = Number(maxPagesInput?.value ?? "3") || 3;
+  const zeroNewJobsThreshold = Number(zeroNewJobsThresholdInput?.value ?? "2") || 2;
+  const searchLaunchDelayMs = Number(searchLaunchDelayInput?.value ?? "20000") || 0;
+  const searchLaunchJitterMs = Number(searchLaunchJitterInput?.value ?? "20000") || 0;
+  const pageDelayMs = Number(pageDelayInput?.value ?? "8000") || 0;
+  const pageDelayJitterMs = Number(pageDelayJitterInput?.value ?? "12000") || 0;
+
+  runSummaryProfiles.textContent = `${currentSearchProfiles.length}`;
+  runSummaryLocations.textContent =
+    locationCount > 0 ? `${locationCount} custom location${locationCount === 1 ? "" : "s"}` : "Profile defaults";
+  runSummaryRetention.textContent = retentionMode === "reset" ? "Reset previous jobs" : "Cumulative run";
+  runSummaryPagination.textContent =
+    runMode === "auto"
+      ? `Auto until stop, threshold ${zeroNewJobsThreshold}, emergency cap 50`
+      : `Fixed pages, up to ${maxPages}`;
+  runSummaryPacing.textContent = `Launch ${formatSeconds(searchLaunchDelayMs)} + ${formatSeconds(searchLaunchJitterMs)} jitter, next ${formatSeconds(pageDelayMs)} + ${formatSeconds(pageDelayJitterMs)} jitter`;
 }
 
 function renderAiReviewStatus(summary: AiReviewSummary): void {
@@ -219,11 +255,14 @@ function renderRunModeControls(): void {
 
   maxPagesInput?.toggleAttribute("disabled", isAuto);
   zeroNewJobsThresholdInput?.toggleAttribute("disabled", !isAuto);
+  maxPagesField?.classList.toggle("hidden", isAuto);
+  zeroNewJobsThresholdField?.classList.toggle("hidden", !isAuto);
   if (runModeHelper) {
     runModeHelper.textContent = isAuto
       ? "Auto until stop follows pagination until no next page, repeated URLs, challenge detection, the zero-new-jobs threshold, or the 50-page emergency ceiling."
       : "Fixed pages stops after the selected number of result pages.";
   }
+  renderRunSummary();
 }
 
 function renderRuns(runs: RunRecord[], latestRunTargets: RunTarget[]): void {
@@ -522,6 +561,7 @@ async function loadSummary(): Promise<void> {
     renderSearches(summary.searches);
     renderRuns(summary.runs, summary.latestRunTargets);
     renderJobs(summary.jobs);
+    renderRunSummary();
     renderSortIndicators();
     bindStatusEditors();
     bindOverrideEditors();
@@ -681,6 +721,7 @@ sortButtons.forEach((button) => {
 
 retentionModeInput?.addEventListener("change", () => {
   localStorage.setItem(RETENTION_MODE_STORAGE_KEY, retentionModeInput.value);
+  renderRunSummary();
 });
 
 runLocationsInput?.addEventListener("input", () => {
@@ -695,26 +736,32 @@ runModeInput?.addEventListener("change", () => {
 
 maxPagesInput?.addEventListener("change", () => {
   localStorage.setItem(MAX_PAGES_STORAGE_KEY, maxPagesInput.value);
+  renderRunSummary();
 });
 
 zeroNewJobsThresholdInput?.addEventListener("change", () => {
   localStorage.setItem(ZERO_NEW_THRESHOLD_STORAGE_KEY, zeroNewJobsThresholdInput.value);
+  renderRunSummary();
 });
 
 searchLaunchDelayInput?.addEventListener("change", () => {
   localStorage.setItem(SEARCH_LAUNCH_DELAY_STORAGE_KEY, searchLaunchDelayInput.value);
+  renderRunSummary();
 });
 
 searchLaunchJitterInput?.addEventListener("change", () => {
   localStorage.setItem(SEARCH_LAUNCH_JITTER_STORAGE_KEY, searchLaunchJitterInput.value);
+  renderRunSummary();
 });
 
 pageDelayInput?.addEventListener("change", () => {
   localStorage.setItem(PAGE_DELAY_STORAGE_KEY, pageDelayInput.value);
+  renderRunSummary();
 });
 
 pageDelayJitterInput?.addEventListener("change", () => {
   localStorage.setItem(PAGE_DELAY_JITTER_STORAGE_KEY, pageDelayJitterInput.value);
+  renderRunSummary();
 });
 
 guidanceInput?.addEventListener("input", () => {
@@ -782,6 +829,7 @@ if (relevanceFilterInput) {
 
 renderRunModeControls();
 renderSortIndicators();
+renderRunSummary();
 
 void loadSummary();
 window.setInterval(() => {
