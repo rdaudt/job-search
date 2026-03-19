@@ -100,6 +100,7 @@ Notes:
 - Raw jobs are captured first and stored immediately.
 - Relevance classification runs in the background after capture.
 - The Review Jobs table hides AI-irrelevant jobs by default, but you can show them with the toggle.
+- The Review Jobs table shows the first 240 characters of each explanation by default and lets you expand longer explanations inline.
 - If `OPENAI_API_KEY` is not set, jobs remain `Unreviewed`.
 - The app uses OpenAI's `responses` API. If `OPENAI_MODEL` is omitted, it now defaults to `gpt-5.4`.
 - `OPENAI_REASONING_EFFORT` is optional and accepts `none`, `low`, `medium`, `high`, or `xhigh`. The default is `low`.

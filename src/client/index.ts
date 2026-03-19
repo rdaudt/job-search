@@ -1,7 +1,9 @@
 import type { AiReviewSummary, AppSummary, JobRecord, JobStatus, PersistedSearchProfile, RunRecord, RunTarget } from "../shared/types.js";
 import {
+  EXPLANATION_PREVIEW_LENGTH,
   getDefaultSortDirection,
   getRelevanceExplanation,
+  getRelevanceExplanationPreview,
   getRelevanceFlagStatus,
   jobSortFields,
   matchesRelevanceFilter,
@@ -65,7 +67,9 @@ let currentSortField: JobSortField = "relevance";
 let currentSortDirection: SortDirection = "asc";
 let guidanceDraft: string | null = null;
 const overrideDrafts = new Map<number, { relevance: string; note: string }>();
+const expandedExplanationJobIds = new Set<number>();
 let previousAiPendingCount = 0;
+let currentJobs: JobRecord[] = [];
 
 function showToast(message: string): void {
   if (!toast) {
@@ -300,6 +304,8 @@ function renderJobs(jobs: JobRecord[]): void {
     return;
   }
 
+  currentJobs = jobs;
+
   const visibleJobs = sortJobs(
     jobs.filter((job) => matchesRelevanceFilter(job, currentRelevanceFilter)),
     currentSortField,
@@ -317,6 +323,10 @@ function renderJobs(jobs: JobRecord[]): void {
         const draft = overrideDrafts.get(job.id);
         const overrideValue = draft?.relevance ?? job.userOverrideLabel ?? "";
         const overrideNote = draft?.note ?? job.userOverrideNote ?? "";
+        const isExplanationExpanded = expandedExplanationJobIds.has(job.id);
+        const explanationPreview = getRelevanceExplanationPreview(job, EXPLANATION_PREVIEW_LENGTH);
+        const explanationText = isExplanationExpanded ? getRelevanceExplanation(job) : explanationPreview.text;
+        const explanationToggleLabel = isExplanationExpanded ? "Show less" : "Show more";
 
         return `
         <tr>
@@ -335,7 +345,16 @@ function renderJobs(jobs: JobRecord[]): void {
           <td>${job.location || "Unknown"}</td>
           <td><span class="job-relevance ${job.hasUserOverride ? "user-override" : ""}">${getRelevanceFlagStatus(job)}</span></td>
           <td>
-            <span class="job-summary">${getRelevanceExplanation(job)}</span>
+            <div class="job-explanation">
+              <span class="job-summary ${isExplanationExpanded ? "job-summary-expanded" : ""}">${explanationText}</span>
+              ${
+                explanationPreview.isTruncated
+                  ? `<button class="explanation-toggle" type="button" data-job-id="${job.id}" aria-expanded="${isExplanationExpanded}">
+                ${explanationToggleLabel}
+              </button>`
+                  : ""
+              }
+            </div>
           </td>
           <td>${job.matchingSearchProfiles.join(", ") || "Unknown"}</td>
           <td>${job.matchingRunLocations.join(", ") || "Any"}</td>
@@ -383,6 +402,23 @@ function bindStatusEditors(): void {
       }
 
       showToast(`Status updated to ${select.value}.`);
+    });
+  });
+}
+
+function bindExplanationToggles(): void {
+  document.querySelectorAll<HTMLButtonElement>(".explanation-toggle").forEach((button) => {
+    button.addEventListener("click", () => {
+      const jobId = Number(button.dataset.jobId);
+      if (expandedExplanationJobIds.has(jobId)) {
+        expandedExplanationJobIds.delete(jobId);
+      } else {
+        expandedExplanationJobIds.add(jobId);
+      }
+      renderJobs(currentJobs);
+      bindStatusEditors();
+      bindOverrideEditors();
+      bindExplanationToggles();
     });
   });
 }
@@ -489,6 +525,7 @@ async function loadSummary(): Promise<void> {
     renderSortIndicators();
     bindStatusEditors();
     bindOverrideEditors();
+    bindExplanationToggles();
 
     if (hasLoadedSummary && summary.jobs.length > previousJobCount) {
       const captured = summary.jobs.length - previousJobCount;

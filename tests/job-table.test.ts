@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { JobRecord } from "../src/shared/types.js";
 import {
+  EXPLANATION_PREVIEW_LENGTH,
   getDefaultSortDirection,
   getRelevanceExplanation,
+  getRelevanceExplanationPreview,
   getRelevanceFilterValue,
   getRelevanceFlagStatus,
   matchesRelevanceFilter,
@@ -153,5 +155,17 @@ describe("job table helpers", () => {
 
     expect(getRelevanceFlagStatus(overridden)).toBe("Relevant");
     expect(getRelevanceExplanation(overridden)).toBe("Leadership-track roles are in scope.");
+  });
+
+  it("returns a truncated explanation preview when the explanation exceeds 240 characters", () => {
+    const longExplanation = "A".repeat(EXPLANATION_PREVIEW_LENGTH + 25);
+    const preview = getRelevanceExplanationPreview(
+      buildJob({
+        effectiveRelevanceExplanation: longExplanation
+      })
+    );
+
+    expect(preview.isTruncated).toBe(true);
+    expect(preview.text).toBe(`${"A".repeat(EXPLANATION_PREVIEW_LENGTH)}\u2026`);
   });
 });

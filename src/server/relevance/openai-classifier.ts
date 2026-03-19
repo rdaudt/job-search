@@ -35,8 +35,7 @@ const responseSchema = {
       },
       reason: {
         type: "string",
-        minLength: 1,
-        maxLength: 240
+        minLength: 1
       },
       signals: {
         type: "array",
@@ -124,7 +123,7 @@ export class OpenAIRelevanceClassifier {
               {
                 type: "input_text",
                 text:
-                  "You classify whether a captured job listing is relevant to a specific user search profile. Judge from the perspective of whether the user would want to review the job. Prefer precision over recall for obviously unrelated jobs. Use the title heavily and the summary as support. Respect any global user guidance, and if a job-specific override note is present, treat it as strong context for that specific job. Return only the requested JSON schema."
+                  "You classify whether a captured job listing is relevant to a specific user search profile. Judge from the perspective of whether the user would want to review the job. Prefer precision over recall for obviously unrelated jobs. Use the title heavily and the summary as support. Respect any global user guidance, and if a job-specific override note is present, treat it as strong context for that specific job. Write a concise but complete reason, and return only the requested JSON schema."
               }
             ]
           },

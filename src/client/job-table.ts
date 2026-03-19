@@ -26,6 +26,7 @@ export const jobSortFields = [
 
 export type JobSortField = (typeof jobSortFields)[number];
 export type SortDirection = "asc" | "desc";
+export const EXPLANATION_PREVIEW_LENGTH = 240;
 
 const relevanceRank: Record<string, number> = {
   relevant: 0,
@@ -99,6 +100,24 @@ export function getRelevanceExplanation(job: JobRecord): string {
     return "Not sent for AI review";
   }
   return "No explanation returned";
+}
+
+export function getRelevanceExplanationPreview(job: JobRecord, maxLength = EXPLANATION_PREVIEW_LENGTH): {
+  text: string;
+  isTruncated: boolean;
+} {
+  const explanation = getRelevanceExplanation(job);
+  if (explanation.length <= maxLength) {
+    return {
+      text: explanation,
+      isTruncated: false
+    };
+  }
+
+  return {
+    text: `${explanation.slice(0, maxLength).trimEnd()}\u2026`,
+    isTruncated: true
+  };
 }
 
 export function getRelevanceFilterValue(job: JobRecord): RelevanceFilterValue {

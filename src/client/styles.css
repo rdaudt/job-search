@@ -253,6 +253,33 @@ th {
   font-size: 0.92rem;
 }
 
+.job-summary-expanded {
+  white-space: pre-wrap;
+}
+
+.job-explanation {
+  display: grid;
+  gap: 8px;
+}
+
+.explanation-toggle {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.explanation-toggle:hover {
+  background: transparent;
+  transform: none;
+  text-decoration: underline;
+}
+
 .empty-cell {
   color: var(--muted);
   text-align: center;
