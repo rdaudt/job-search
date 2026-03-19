@@ -1,4 +1,16 @@
 import type { AppSummary, JobRecord, JobStatus, PersistedSearchProfile, RunRecord, RunTarget } from "../shared/types.js";
+import {
+  getDefaultSortDirection,
+  getRelevanceExplanation,
+  getRelevanceFlagStatus,
+  jobSortFields,
+  matchesRelevanceFilter,
+  relevanceFilterValues,
+  sortJobs,
+  type JobSortField,
+  type RelevanceFilterValue,
+  type SortDirection
+} from "./job-table.js";
 
 const importForm = document.querySelector<HTMLFormElement>("#import-form");
 const searchFileInput = document.querySelector<HTMLInputElement>("#search-file");
@@ -18,8 +30,9 @@ const runLocationsInput = document.querySelector<HTMLTextAreaElement>("#run-loca
 const runLocationPreview = document.querySelector<HTMLElement>("#run-location-preview");
 const runsContainer = document.querySelector<HTMLElement>("#runs");
 const jobsBody = document.querySelector<HTMLElement>("#jobs-body");
-const hideIrrelevantInput = document.querySelector<HTMLInputElement>("#hide-irrelevant");
+const relevanceFilterInput = document.querySelector<HTMLSelectElement>("#relevance-filter");
 const toast = document.querySelector<HTMLElement>("#toast");
+const sortButtons = document.querySelectorAll<HTMLButtonElement>(".sort-button");
 const SUMMARY_REFRESH_INTERVAL_MS = 4000;
 const RUN_LOCATIONS_STORAGE_KEY = "job-search-finder-run-locations";
 const RETENTION_MODE_STORAGE_KEY = "job-search-finder-retention-mode";
@@ -30,11 +43,16 @@ const SEARCH_LAUNCH_DELAY_STORAGE_KEY = "job-search-finder-search-launch-delay";
 const SEARCH_LAUNCH_JITTER_STORAGE_KEY = "job-search-finder-search-launch-jitter";
 const PAGE_DELAY_STORAGE_KEY = "job-search-finder-page-delay";
 const PAGE_DELAY_JITTER_STORAGE_KEY = "job-search-finder-page-delay-jitter";
-const HIDE_IRRELEVANT_STORAGE_KEY = "job-search-finder-hide-irrelevant";
+const RELEVANCE_FILTER_STORAGE_KEY = "job-search-finder-relevance-filter";
+const JOB_SORT_FIELD_STORAGE_KEY = "job-search-finder-job-sort-field";
+const JOB_SORT_DIRECTION_STORAGE_KEY = "job-search-finder-job-sort-direction";
 
 let isLoadingSummary = false;
 let previousJobCount = 0;
 let hasLoadedSummary = false;
+let currentRelevanceFilter: RelevanceFilterValue = "all";
+let currentSortField: JobSortField = "relevance";
+let currentSortDirection: SortDirection = "asc";
 
 function showToast(message: string): void {
   if (!toast) {
@@ -118,26 +136,17 @@ function formatSeconds(ms: number): string {
   return `${Math.round(ms / 1000)}s`;
 }
 
-function humanizeRelevance(job: JobRecord): string {
-  if (job.relevanceStatus === "pending") {
-    return "Pending AI review";
-  }
-  if (job.relevanceStatus === "failed") {
-    return "AI failed";
-  }
-  if (job.relevanceStatus === "unreviewed") {
-    return "Unreviewed";
-  }
-  if (job.relevanceLabel === "relevant") {
-    return "Relevant";
-  }
-  if (job.relevanceLabel === "borderline") {
-    return "Borderline";
-  }
-  if (job.relevanceLabel === "irrelevant") {
-    return "Irrelevant";
-  }
-  return "Unreviewed";
+function renderSortIndicators(): void {
+  sortButtons.forEach((button) => {
+    const field = button.dataset.sortField as JobSortField | undefined;
+    const isActive = field === currentSortField;
+    button.classList.toggle("is-active", isActive);
+    if (isActive) {
+      button.dataset.sortDirection = currentSortDirection;
+    } else {
+      delete button.dataset.sortDirection;
+    }
+  });
 }
 
 function renderRunModeControls(): void {
@@ -231,13 +240,14 @@ function renderJobs(jobs: JobRecord[]): void {
     return;
   }
 
-  const hideIrrelevant = hideIrrelevantInput?.checked ?? true;
-  const visibleJobs = hideIrrelevant
-    ? jobs.filter((job) => !(job.relevanceStatus === "complete" && job.relevanceLabel === "irrelevant"))
-    : jobs;
+  const visibleJobs = sortJobs(
+    jobs.filter((job) => matchesRelevanceFilter(job, currentRelevanceFilter)),
+    currentSortField,
+    currentSortDirection
+  );
 
   if (!visibleJobs.length) {
-    jobsBody.innerHTML = `<tr><td colspan="8" class="empty-cell">No captured jobs yet.</td></tr>`;
+    jobsBody.innerHTML = `<tr><td colspan="9" class="empty-cell">No jobs match the current filter.</td></tr>`;
     return;
   }
 
@@ -257,11 +267,11 @@ function renderJobs(jobs: JobRecord[]): void {
           </td>
           <td>${job.company || "Unknown"}</td>
           <td>${job.location || "Unknown"}</td>
+          <td><span class="job-relevance">${getRelevanceFlagStatus(job)}</span></td>
           <td>
-            <span class="job-relevance">${humanizeRelevance(job)}</span>
-            ${job.relevanceReason ? `<p class="job-summary">${job.relevanceReason}</p>` : ""}
+            <span class="job-summary">${getRelevanceExplanation(job)}</span>
           </td>
-          <td>${job.matchingSearchProfiles.join(", ")}</td>
+          <td>${job.matchingSearchProfiles.join(", ") || "Unknown"}</td>
           <td>${job.matchingRunLocations.join(", ") || "Any"}</td>
           <td>${new Date(job.lastSeenAt).toLocaleString()}</td>
           <td>
@@ -307,6 +317,7 @@ async function loadSummary(): Promise<void> {
     renderSearches(summary.searches);
     renderRuns(summary.runs, summary.latestRunTargets);
     renderJobs(summary.jobs);
+    renderSortIndicators();
     bindStatusEditors();
 
     if (hasLoadedSummary && summary.jobs.length > previousJobCount) {
@@ -386,9 +397,33 @@ runSearchesButton?.addEventListener("click", async () => {
   await loadSummary();
 });
 
-hideIrrelevantInput?.addEventListener("change", () => {
-  localStorage.setItem(HIDE_IRRELEVANT_STORAGE_KEY, hideIrrelevantInput.checked ? "true" : "false");
+relevanceFilterInput?.addEventListener("change", () => {
+  const nextFilter = relevanceFilterValues.includes((relevanceFilterInput.value as RelevanceFilterValue))
+    ? (relevanceFilterInput.value as RelevanceFilterValue)
+    : "all";
+  currentRelevanceFilter = nextFilter;
+  localStorage.setItem(RELEVANCE_FILTER_STORAGE_KEY, nextFilter);
   void loadSummary();
+});
+
+sortButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const field = button.dataset.sortField as JobSortField | undefined;
+    if (!field || !jobSortFields.includes(field)) {
+      return;
+    }
+
+    if (field === currentSortField) {
+      currentSortDirection = currentSortDirection === "asc" ? "desc" : "asc";
+    } else {
+      currentSortField = field;
+      currentSortDirection = getDefaultSortDirection(field);
+    }
+
+    localStorage.setItem(JOB_SORT_FIELD_STORAGE_KEY, currentSortField);
+    localStorage.setItem(JOB_SORT_DIRECTION_STORAGE_KEY, currentSortDirection);
+    void loadSummary();
+  });
 });
 
 retentionModeInput?.addEventListener("change", () => {
@@ -466,11 +501,30 @@ if (pageDelayJitterInput) {
   pageDelayJitterInput.value = localStorage.getItem(PAGE_DELAY_JITTER_STORAGE_KEY) ?? "12000";
 }
 
-if (hideIrrelevantInput) {
-  hideIrrelevantInput.checked = (localStorage.getItem(HIDE_IRRELEVANT_STORAGE_KEY) ?? "true") !== "false";
+if (relevanceFilterInput) {
+  const storedFilter = localStorage.getItem(RELEVANCE_FILTER_STORAGE_KEY);
+  currentRelevanceFilter =
+    storedFilter && relevanceFilterValues.includes(storedFilter as RelevanceFilterValue)
+      ? (storedFilter as RelevanceFilterValue)
+      : "all";
+  relevanceFilterInput.value = currentRelevanceFilter;
+}
+
+{
+  const storedSortField = localStorage.getItem(JOB_SORT_FIELD_STORAGE_KEY);
+  currentSortField =
+    storedSortField && jobSortFields.includes(storedSortField as JobSortField)
+      ? (storedSortField as JobSortField)
+      : "relevance";
+  const storedSortDirection = localStorage.getItem(JOB_SORT_DIRECTION_STORAGE_KEY);
+  currentSortDirection =
+    storedSortDirection === "asc" || storedSortDirection === "desc"
+      ? storedSortDirection
+      : getDefaultSortDirection(currentSortField);
 }
 
 renderRunModeControls();
+renderSortIndicators();
 
 void loadSummary();
 window.setInterval(() => {

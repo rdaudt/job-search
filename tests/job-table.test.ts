@@ -1,0 +1,106 @@
+import { describe, expect, it } from "vitest";
+import type { JobRecord } from "../src/shared/types.js";
+import {
+  getDefaultSortDirection,
+  getRelevanceExplanation,
+  getRelevanceFilterValue,
+  getRelevanceFlagStatus,
+  matchesRelevanceFilter,
+  sortJobs
+} from "../src/client/job-table.js";
+
+function buildJob(overrides: Partial<JobRecord>): JobRecord {
+  return {
+    id: 1,
+    source: "indeed",
+    sourceJobId: null,
+    dedupeKey: "job-1",
+    normalizedUrl: "https://ca.indeed.com/viewjob?jk=job-1",
+    isLinkable: true,
+    title: "Fitness Coach",
+    company: "Acme",
+    location: "Vancouver, BC",
+    summary: "Coach clients",
+    firstCapturedAt: "2026-03-19T10:00:00.000Z",
+    lastSeenAt: "2026-03-19T10:00:00.000Z",
+    status: "new",
+    relevanceStatus: "complete",
+    relevanceLabel: "relevant",
+    relevanceReason: "Strong title match",
+    matchingSearchProfiles: ["Fitness"],
+    matchingRunLocations: ["Vancouver, BC"],
+    ...overrides
+  };
+}
+
+describe("job table helpers", () => {
+  it("derives relevance labels and explanation placeholders", () => {
+    expect(
+      getRelevanceFlagStatus(
+        buildJob({ relevanceStatus: "pending", relevanceLabel: null, relevanceReason: null })
+      )
+    ).toBe("Pending AI review");
+
+    expect(
+      getRelevanceExplanation(
+        buildJob({ relevanceStatus: "failed", relevanceLabel: null, relevanceReason: null })
+      )
+    ).toBe("AI classification failed");
+
+    expect(
+      getRelevanceExplanation(
+        buildJob({ relevanceStatus: "unreviewed", relevanceLabel: null, relevanceReason: null })
+      )
+    ).toBe("Not sent for AI review");
+  });
+
+  it("filters by derived relevance state", () => {
+    const irrelevant = buildJob({
+      relevanceStatus: "complete",
+      relevanceLabel: "irrelevant",
+      relevanceReason: "Wrong domain"
+    });
+
+    expect(getRelevanceFilterValue(irrelevant)).toBe("irrelevant");
+    expect(matchesRelevanceFilter(irrelevant, "irrelevant")).toBe(true);
+    expect(matchesRelevanceFilter(irrelevant, "relevant")).toBe(false);
+  });
+
+  it("sorts by relevance first and last seen descending as tie-breaker", () => {
+    const jobs = [
+      buildJob({
+        id: 1,
+        title: "Older Relevant",
+        lastSeenAt: "2026-03-18T10:00:00.000Z",
+        relevanceStatus: "complete",
+        relevanceLabel: "relevant"
+      }),
+      buildJob({
+        id: 2,
+        title: "Pending Job",
+        lastSeenAt: "2026-03-19T10:00:00.000Z",
+        relevanceStatus: "pending",
+        relevanceLabel: null,
+        relevanceReason: null
+      }),
+      buildJob({
+        id: 3,
+        title: "Newer Relevant",
+        lastSeenAt: "2026-03-19T11:00:00.000Z",
+        relevanceStatus: "complete",
+        relevanceLabel: "relevant"
+      })
+    ];
+
+    expect(sortJobs(jobs, "relevance", "asc").map((job) => job.title)).toEqual([
+      "Newer Relevant",
+      "Older Relevant",
+      "Pending Job"
+    ]);
+  });
+
+  it("uses descending as the default direction for last seen only", () => {
+    expect(getDefaultSortDirection("lastSeen")).toBe("desc");
+    expect(getDefaultSortDirection("title")).toBe("asc");
+  });
+});

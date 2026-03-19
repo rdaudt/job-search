@@ -257,11 +257,47 @@ th {
   gap: 16px;
 }
 
-.checkbox-inline {
+.review-filter {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   color: var(--muted);
+}
+
+.review-filter select {
+  padding-right: 38px;
+}
+
+.sort-button {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.sort-button::after {
+  content: "↕";
+  margin-left: 6px;
+  opacity: 0.4;
+}
+
+.sort-button.is-active::after {
+  opacity: 1;
+}
+
+.sort-button[data-sort-direction="asc"]::after {
+  content: "↑";
+}
+
+.sort-button[data-sort-direction="desc"]::after {
+  content: "↓";
 }
 
 .job-relevance {

@@ -143,9 +143,17 @@
         <div class="panel-header">
           <h2>3. Review Jobs</h2>
           <div class="panel-actions">
-            <label class="checkbox-inline">
-              <input id="hide-irrelevant" type="checkbox" checked />
-              Hide irrelevant
+            <label class="field-label review-filter" for="relevance-filter">
+              <span>Relevance filter</span>
+              <select id="relevance-filter">
+                <option value="all">All</option>
+                <option value="relevant">Relevant</option>
+                <option value="borderline">Borderline</option>
+                <option value="irrelevant">Irrelevant</option>
+                <option value="pending">Pending</option>
+                <option value="failed">Failed</option>
+                <option value="unreviewed">Unreviewed</option>
+              </select>
             </label>
             <a href="/api/jobs/export.csv">Export CSV</a>
           </div>
@@ -154,19 +162,20 @@
           <table>
             <thead>
               <tr>
-                <th>Title</th>
-                <th>Company</th>
-                <th>Location</th>
-                <th>Relevance</th>
-                <th>Searches</th>
-                <th>Run Locations</th>
-                <th>Last Seen</th>
-                <th>Status</th>
+                <th><button class="sort-button" type="button" data-sort-field="title">Title</button></th>
+                <th><button class="sort-button" type="button" data-sort-field="company">Company</button></th>
+                <th><button class="sort-button" type="button" data-sort-field="location">Location</button></th>
+                <th><button class="sort-button" type="button" data-sort-field="relevance">Relevance Flag/Status</button></th>
+                <th><button class="sort-button" type="button" data-sort-field="explanation">Explanation</button></th>
+                <th><button class="sort-button" type="button" data-sort-field="searches">Searches</button></th>
+                <th><button class="sort-button" type="button" data-sort-field="runLocations">Run Locations</button></th>
+                <th><button class="sort-button" type="button" data-sort-field="lastSeen">Last Seen</button></th>
+                <th><button class="sort-button" type="button" data-sort-field="status">Status</button></th>
               </tr>
             </thead>
             <tbody id="jobs-body">
               <tr>
-                <td colspan="8" class="empty-cell">No captured jobs yet.</td>
+                <td colspan="9" class="empty-cell">No captured jobs yet.</td>
               </tr>
             </tbody>
           </table>
