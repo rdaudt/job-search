@@ -65,6 +65,15 @@ export function parseIndeedPageNumber(pageUrl: string): number {
   return Math.floor(startValue / 10) + 1;
 }
 
+export function normalizeIndeedResultsPageUrl(pageUrl: string): string {
+  const url = new URL(pageUrl);
+  url.hash = "";
+  ["jobFinderProfile", "jobFinderRunTarget", "advn", "from", "fromage", "jk", "tk", "vjk", "vjs"].forEach((param) => {
+    url.searchParams.delete(param);
+  });
+  return url.toString();
+}
+
 export const indeedAdapter: SourceAdapter = {
   buildSearchUrl(runTarget: RunTarget) {
     const url = new URL(`https://${selectIndeedHostForLocation(runTarget.location)}/jobs`);

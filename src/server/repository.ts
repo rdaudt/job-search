@@ -6,13 +6,14 @@ import type {
   JobRecord,
   JobStatus,
   PersistedSearchProfile,
+  RunMode,
   RunTarget,
   RunRecord,
   RunTargetStateUpdate,
   SearchProfile
 } from "../shared/types.js";
 import type { SourceAdapter } from "../shared/types.js";
-import { listingMatchesRunLocation } from "../shared/location-utils.js";
+import { listingMatchesCanadianScope, listingMatchesRunLocation } from "../shared/location-utils.js";
 
 type JobRow = {
   id: number;
@@ -36,7 +37,14 @@ type RunRow = {
   id: number;
   started_at: string;
   search_count: number;
+  run_mode: RunMode;
   max_pages: number;
+  zero_new_jobs_threshold: number;
+  emergency_max_pages: number;
+  search_launch_delay_ms: number;
+  search_launch_jitter_ms: number;
+  page_delay_ms: number;
+  page_delay_jitter_ms: number;
 };
 
 type SearchRow = {
@@ -57,7 +65,14 @@ type RunTargetRow = {
   keywords: string;
   remote: number;
   location: string;
+  run_mode: RunMode;
   max_pages: number;
+  zero_new_jobs_threshold: number;
+  emergency_max_pages: number;
+  search_launch_delay_ms: number;
+  search_launch_jitter_ms: number;
+  page_delay_ms: number;
+  page_delay_jitter_ms: number;
   pages_captured: number;
   status: string;
   stop_reason: string | null;
@@ -66,7 +81,20 @@ type RunTargetRow = {
   updated_at: string;
 };
 
-type RunTargetTemplate = Omit<RunTarget, "runId">;
+type RunTargetTemplate = Pick<
+  RunTarget,
+  "id" | "searchProfileId" | "searchProfileName" | "keywords" | "remote" | "location"
+>;
+type RunConfig = {
+  runMode: RunMode;
+  maxPages: number;
+  zeroNewJobsThreshold: number;
+  emergencyMaxPages: number;
+  searchLaunchDelayMs: number;
+  searchLaunchJitterMs: number;
+  pageDelayMs: number;
+  pageDelayJitterMs: number;
+};
 
 export class Repository {
   constructor(
@@ -119,20 +147,40 @@ export class Repository {
     }));
   }
 
-  createRun(runTargetTemplates: RunTargetTemplate[], maxPages: number): { run: RunRecord; targets: RunTarget[] } {
+  createRun(runTargetTemplates: RunTargetTemplate[], config: RunConfig): { run: RunRecord; targets: RunTarget[] } {
     const startedAt = new Date().toISOString();
-    const transaction = this.database.transaction((templates: RunTargetTemplate[], pageLimit: number) => {
+    const transaction = this.database.transaction((templates: RunTargetTemplate[], runConfig: RunConfig) => {
       const runResult = this.database
-        .prepare("INSERT INTO runs (started_at, search_count, max_pages) VALUES (?, ?, ?)")
-        .run(startedAt, templates.length, pageLimit);
+        .prepare(`
+          INSERT INTO runs (
+            started_at, search_count, run_mode, max_pages, zero_new_jobs_threshold, emergency_max_pages,
+            search_launch_delay_ms, search_launch_jitter_ms, page_delay_ms, page_delay_jitter_ms
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        .run(
+          startedAt,
+          templates.length,
+          runConfig.runMode,
+          runConfig.maxPages,
+          runConfig.zeroNewJobsThreshold,
+          runConfig.emergencyMaxPages,
+          runConfig.searchLaunchDelayMs,
+          runConfig.searchLaunchJitterMs,
+          runConfig.pageDelayMs,
+          runConfig.pageDelayJitterMs,
+        );
       const runId = Number(runResult.lastInsertRowid);
       const insertRunTarget = this.database.prepare(`
         INSERT INTO run_targets (
-          id, run_id, search_profile_id, location, max_pages, pages_captured, status, stop_reason,
-          last_page_number, last_page_url, updated_at
+          id, run_id, search_profile_id, location, run_mode, max_pages, zero_new_jobs_threshold,
+          emergency_max_pages, search_launch_delay_ms, search_launch_jitter_ms, page_delay_ms, page_delay_jitter_ms,
+          pages_captured, status, stop_reason, last_page_number, last_page_url, updated_at
         )
         VALUES (
-          @id, @runId, @searchProfileId, @location, @maxPages, 0, 'pending', NULL, NULL, NULL, @updatedAt
+          @id, @runId, @searchProfileId, @location, @runMode, @maxPages, @zeroNewJobsThreshold,
+          @emergencyMaxPages, @searchLaunchDelayMs, @searchLaunchJitterMs, @pageDelayMs, @pageDelayJitterMs,
+          0, 'pending', NULL, NULL, NULL, @updatedAt
         )
       `);
 
@@ -142,7 +190,14 @@ export class Repository {
           runId,
           searchProfileId: template.searchProfileId,
           location: template.location,
-          maxPages: pageLimit,
+          runMode: runConfig.runMode,
+          maxPages: runConfig.maxPages,
+          zeroNewJobsThreshold: runConfig.zeroNewJobsThreshold,
+          emergencyMaxPages: runConfig.emergencyMaxPages,
+          searchLaunchDelayMs: runConfig.searchLaunchDelayMs,
+          searchLaunchJitterMs: runConfig.searchLaunchJitterMs,
+          pageDelayMs: runConfig.pageDelayMs,
+          pageDelayJitterMs: runConfig.pageDelayJitterMs,
           updatedAt: startedAt
         });
       }
@@ -152,12 +207,26 @@ export class Repository {
           id: runId,
           startedAt,
           searchCount: templates.length,
-          maxPages: pageLimit
+          runMode: runConfig.runMode,
+          maxPages: runConfig.maxPages,
+          zeroNewJobsThreshold: runConfig.zeroNewJobsThreshold,
+          emergencyMaxPages: runConfig.emergencyMaxPages,
+          searchLaunchDelayMs: runConfig.searchLaunchDelayMs,
+          searchLaunchJitterMs: runConfig.searchLaunchJitterMs,
+          pageDelayMs: runConfig.pageDelayMs,
+          pageDelayJitterMs: runConfig.pageDelayJitterMs
         },
         targets: templates.map((template) => ({
           ...template,
           runId,
-          maxPages: pageLimit,
+          runMode: runConfig.runMode,
+          maxPages: runConfig.maxPages,
+          zeroNewJobsThreshold: runConfig.zeroNewJobsThreshold,
+          emergencyMaxPages: runConfig.emergencyMaxPages,
+          searchLaunchDelayMs: runConfig.searchLaunchDelayMs,
+          searchLaunchJitterMs: runConfig.searchLaunchJitterMs,
+          pageDelayMs: runConfig.pageDelayMs,
+          pageDelayJitterMs: runConfig.pageDelayJitterMs,
           pagesCaptured: 0,
           status: "pending",
           stopReason: null,
@@ -168,19 +237,41 @@ export class Repository {
       };
     });
 
-    return transaction(runTargetTemplates, maxPages);
+    return transaction(runTargetTemplates, config);
   }
 
   listRuns(): RunRecord[] {
     const rows = this.database
-      .prepare("SELECT id, started_at, search_count, max_pages FROM runs ORDER BY started_at DESC LIMIT 20")
+      .prepare(`
+        SELECT
+          id,
+          started_at,
+          search_count,
+          run_mode,
+          max_pages,
+          zero_new_jobs_threshold,
+          emergency_max_pages,
+          search_launch_delay_ms,
+          search_launch_jitter_ms,
+          page_delay_ms,
+          page_delay_jitter_ms
+        FROM runs
+        ORDER BY started_at DESC LIMIT 20
+      `)
       .all() as RunRow[];
 
     return rows.map((row) => ({
       id: row.id,
       startedAt: row.started_at,
       searchCount: row.search_count,
-      maxPages: row.max_pages
+      runMode: row.run_mode,
+      maxPages: row.max_pages,
+      zeroNewJobsThreshold: row.zero_new_jobs_threshold,
+      emergencyMaxPages: row.emergency_max_pages,
+      searchLaunchDelayMs: row.search_launch_delay_ms,
+      searchLaunchJitterMs: row.search_launch_jitter_ms,
+      pageDelayMs: row.page_delay_ms,
+      pageDelayJitterMs: row.page_delay_jitter_ms
     }));
   }
 
@@ -200,7 +291,14 @@ export class Repository {
           search_profiles.keywords,
           search_profiles.remote,
           run_targets.location,
+          run_targets.run_mode,
           run_targets.max_pages,
+          run_targets.zero_new_jobs_threshold,
+          run_targets.emergency_max_pages,
+          run_targets.search_launch_delay_ms,
+          run_targets.search_launch_jitter_ms,
+          run_targets.page_delay_ms,
+          run_targets.page_delay_jitter_ms,
           run_targets.pages_captured,
           run_targets.status,
           run_targets.stop_reason,
@@ -222,7 +320,14 @@ export class Repository {
       keywords: row.keywords,
       remote: Boolean(row.remote),
       location: row.location,
+      runMode: row.run_mode,
       maxPages: row.max_pages,
+      zeroNewJobsThreshold: row.zero_new_jobs_threshold,
+      emergencyMaxPages: row.emergency_max_pages,
+      searchLaunchDelayMs: row.search_launch_delay_ms,
+      searchLaunchJitterMs: row.search_launch_jitter_ms,
+      pageDelayMs: row.page_delay_ms,
+      pageDelayJitterMs: row.page_delay_jitter_ms,
       pagesCaptured: row.pages_captured,
       status: row.status as RunTarget["status"],
       stopReason: row.stop_reason,
@@ -243,7 +348,14 @@ export class Repository {
           search_profiles.keywords,
           search_profiles.remote,
           run_targets.location,
+          run_targets.run_mode,
           run_targets.max_pages,
+          run_targets.zero_new_jobs_threshold,
+          run_targets.emergency_max_pages,
+          run_targets.search_launch_delay_ms,
+          run_targets.search_launch_jitter_ms,
+          run_targets.page_delay_ms,
+          run_targets.page_delay_jitter_ms,
           run_targets.pages_captured,
           run_targets.status,
           run_targets.stop_reason,
@@ -268,7 +380,14 @@ export class Repository {
       keywords: row.keywords,
       remote: Boolean(row.remote),
       location: row.location,
+      runMode: row.run_mode,
       maxPages: row.max_pages,
+      zeroNewJobsThreshold: row.zero_new_jobs_threshold,
+      emergencyMaxPages: row.emergency_max_pages,
+      searchLaunchDelayMs: row.search_launch_delay_ms,
+      searchLaunchJitterMs: row.search_launch_jitter_ms,
+      pageDelayMs: row.page_delay_ms,
+      pageDelayJitterMs: row.page_delay_jitter_ms,
       pagesCaptured: row.pages_captured,
       status: row.status as RunTarget["status"],
       stopReason: row.stop_reason,
@@ -381,6 +500,9 @@ export class Repository {
       });
 
       for (const listing of payload.listings) {
+        if (!listingMatchesCanadianScope(listing.location, runTarget.remote)) {
+          continue;
+        }
         if (!listingMatchesRunLocation(listing.location, runTarget.location, runTarget.remote)) {
           continue;
         }

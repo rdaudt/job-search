@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { attachRunTargetMetadata, indeedAdapter, parseIndeedPageNumber } from "../src/shared/indeed.js";
-import { listingMatchesRunLocation } from "../src/shared/location-utils.js";
+import {
+  attachRunTargetMetadata,
+  indeedAdapter,
+  normalizeIndeedResultsPageUrl,
+  parseIndeedPageNumber
+} from "../src/shared/indeed.js";
+import { listingMatchesCanadianScope, listingMatchesRunLocation, selectIndeedHostForLocation } from "../src/shared/location-utils.js";
 
 describe("indeedAdapter", () => {
   it("builds a search URL with run target metadata", () => {
@@ -11,7 +16,21 @@ describe("indeedAdapter", () => {
       searchProfileName: "Remote Frontend",
       keywords: "frontend engineer",
       location: "Vancouver, BC",
-      remote: true
+      remote: true,
+      runMode: "fixed",
+      maxPages: 3,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000,
+      pagesCaptured: 0,
+      status: "pending",
+      stopReason: null,
+      lastPageNumber: null,
+      lastPageUrl: null,
+      updatedAt: "2026-03-18T00:00:00.000Z"
     });
 
     const parsed = new URL(url);
@@ -43,6 +62,15 @@ describe("indeedAdapter", () => {
     expect(listingMatchesRunLocation("Smithfield, NC 27577", "Maple Ridge, BC")).toBe(false);
     expect(listingMatchesRunLocation("Maple Ridge, BC", "Maple Ridge, BC")).toBe(true);
     expect(listingMatchesRunLocation("Hybrid work in Vancouver, BC", "Maple Ridge, BC")).toBe(true);
+  });
+
+  it("enforces the Canadian Indeed host and filters non-Canadian listings", () => {
+    expect(selectIndeedHostForLocation("")).toBe("ca.indeed.com");
+    expect(selectIndeedHostForLocation("Vancouver, BC")).toBe("ca.indeed.com");
+    expect(listingMatchesCanadianScope("Vancouver, BC")).toBe(true);
+    expect(listingMatchesCanadianScope("Remote", true)).toBe(true);
+    expect(listingMatchesCanadianScope("Seattle, WA")).toBe(false);
+    expect(listingMatchesCanadianScope("Remote in United States", true)).toBe(false);
   });
 
   it("keeps valid remote listings for remote runs with a location scope", () => {
@@ -91,5 +119,13 @@ describe("indeedAdapter", () => {
     expect(parsed.searchParams.get("jobFinderProfile")).toBe("frontend");
     expect(parsed.hash).toBe("#job-finder-run-target=run-target-1");
     expect(parseIndeedPageNumber(stamped)).toBe(2);
+  });
+
+  it("normalizes results-page URLs by stripping run and detail params", () => {
+    const normalized = normalizeIndeedResultsPageUrl(
+      "https://www.indeed.com/jobs?q=backend+engineer+node&l=Seattle%2C+WA&jobFinderProfile=backend-local&jobFinderRunTarget=abc&vjk=f2d81681c9ae7a8f#job-finder-run-target=abc",
+    );
+
+    expect(normalized).toBe("https://www.indeed.com/jobs?q=backend+engineer+node&l=Seattle%2C+WA");
   });
 });

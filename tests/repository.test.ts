@@ -34,19 +34,28 @@ describe("Repository", () => {
         id: "one",
         name: "One",
         keywords: "react",
-        location: "Remote",
+        location: "",
         remote: true
       },
       {
         id: "two",
         name: "Two",
         keywords: "typescript",
-        location: "Remote",
+        location: "",
         remote: true
       }
     ]);
     const searches = repository.listSearchProfiles();
-    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), 2);
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      runMode: "fixed",
+      maxPages: 2,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
 
     const payload: CapturePayload = {
       source: "indeed",
@@ -70,7 +79,7 @@ describe("Repository", () => {
     const jobs = repository.listJobs();
     expect(jobs).toHaveLength(1);
     expect(jobs[0].matchingSearchProfiles).toEqual(["One", "Two"]);
-    expect(jobs[0].matchingRunLocations).toEqual(["Remote"]);
+    expect(jobs[0].matchingRunLocations).toEqual([]);
   });
 
   it("exports CSV with the latest job state", () => {
@@ -80,12 +89,21 @@ describe("Repository", () => {
         id: "one",
         name: "One",
         keywords: "react",
-        location: "Remote",
+        location: "",
         remote: true
       }
     ]);
     const searches = repository.listSearchProfiles();
-    const { targets } = repository.createRun(buildRunTargetTemplates(searches, ["Vancouver, BC", "Burnaby, BC"]), 3);
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, ["Vancouver, BC", "Burnaby, BC"]), {
+      runMode: "fixed",
+      maxPages: 3,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
 
     repository.ingestCapture({
       source: "indeed",
@@ -123,7 +141,16 @@ describe("Repository", () => {
       }
     ]);
     const searches = repository.listSearchProfiles();
-    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), 2);
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      runMode: "fixed",
+      maxPages: 2,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
 
     repository.ingestCapture({
       source: "indeed",
@@ -145,6 +172,56 @@ describe("Repository", () => {
     expect(jobs[0].matchingRunLocations).toEqual(["Vancouver, BC"]);
   });
 
+  it("drops non-Canadian listings even when they match the search keywords", () => {
+    const repository = createRepository();
+    repository.replaceSearchProfiles([
+      {
+        id: "frontend",
+        name: "Frontend",
+        keywords: "frontend engineer",
+        location: "",
+        remote: false
+      }
+    ]);
+    const searches = repository.listSearchProfiles();
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      runMode: "fixed",
+      maxPages: 2,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
+
+    repository.ingestCapture({
+      source: "indeed",
+      runTargetId: targets[0].id,
+      pageUrl: "https://ca.indeed.com/jobs?q=frontend+engineer",
+      listings: [
+        {
+          sourceJobId: "jk-ca",
+          url: "https://ca.indeed.com/viewjob?jk=jk-ca",
+          title: "Frontend Engineer",
+          company: "Acme",
+          location: "Vancouver, BC"
+        },
+        {
+          sourceJobId: "jk-us",
+          url: "https://ca.indeed.com/viewjob?jk=jk-us",
+          title: "Frontend Engineer",
+          company: "Other",
+          location: "Seattle, WA"
+        }
+      ]
+    });
+
+    const jobs = repository.listJobs();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].location).toBe("Vancouver, BC");
+  });
+
   it("tracks page progress and terminal state per run target", () => {
     const repository = createRepository();
     repository.replaceSearchProfiles([
@@ -158,8 +235,18 @@ describe("Repository", () => {
     ]);
 
     const searches = repository.listSearchProfiles();
-    const { run, targets } = repository.createRun(buildRunTargetTemplates(searches, []), 3);
+    const { run, targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      runMode: "fixed",
+      maxPages: 3,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
     expect(run.maxPages).toBe(3);
+    expect(run.runMode).toBe("fixed");
 
     repository.ingestCapture({
       source: "indeed",
@@ -189,5 +276,41 @@ describe("Repository", () => {
     expect(latestTarget.status).toBe("completed");
     expect(latestTarget.stopReason).toBe("page-limit-reached");
     expect(latestTarget.lastPageNumber).toBe(2);
+  });
+
+  it("stores auto mode settings on runs and targets", () => {
+    const repository = createRepository();
+    repository.replaceSearchProfiles([
+      {
+        id: "frontend",
+        name: "Frontend",
+        keywords: "frontend engineer",
+        location: "Vancouver, BC",
+        remote: false
+      }
+    ]);
+
+    const searches = repository.listSearchProfiles();
+    const { run, targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      runMode: "auto",
+      maxPages: 3,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
+
+    expect(run.runMode).toBe("auto");
+    expect(run.zeroNewJobsThreshold).toBe(2);
+    expect(run.emergencyMaxPages).toBe(50);
+    expect(run.searchLaunchDelayMs).toBe(20_000);
+    expect(run.pageDelayJitterMs).toBe(12_000);
+    expect(targets[0].runMode).toBe("auto");
+    expect(targets[0].zeroNewJobsThreshold).toBe(2);
+    expect(targets[0].emergencyMaxPages).toBe(50);
+    expect(targets[0].searchLaunchJitterMs).toBe(20_000);
+    expect(targets[0].pageDelayMs).toBe(8_000);
   });
 });

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PersistedSearchProfile } from "../shared/types.js";
+import { assertCanadianLocation } from "../shared/location-utils.js";
 
 type RunTargetTemplate = {
   id: string;
@@ -23,6 +24,7 @@ export function normalizeRunLocations(locations: string[]): string[] {
     }
     const key = normalized.toLowerCase();
     if (!deduped.has(key)) {
+      assertCanadianLocation(normalized, "Run location");
       deduped.set(key, normalized);
     }
   }
@@ -42,6 +44,7 @@ export function buildRunTargetTemplates(
       : [normalizeLocation(profile.location || "")];
 
     for (const location of locations) {
+      assertCanadianLocation(location, `Location for search '${profile.name}'`);
       templates.push({
         id: randomUUID(),
         searchProfileId: profile.id,

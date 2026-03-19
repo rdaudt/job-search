@@ -4,6 +4,15 @@ export const statusValues = ["new", "reviewed", "saved", "ignored"] as const;
 export type JobStatus = (typeof statusValues)[number];
 export const runTargetStatusValues = ["pending", "capturing", "completed", "failed"] as const;
 export type RunTargetStatus = (typeof runTargetStatusValues)[number];
+export const runModeValues = ["fixed", "auto"] as const;
+export type RunMode = (typeof runModeValues)[number];
+export const DEFAULT_FIXED_MAX_PAGES = 3;
+export const DEFAULT_AUTO_ZERO_NEW_JOBS_THRESHOLD = 2;
+export const DEFAULT_EMERGENCY_MAX_PAGES = 50;
+export const DEFAULT_SEARCH_LAUNCH_DELAY_MS = 20_000;
+export const DEFAULT_SEARCH_LAUNCH_JITTER_MS = 20_000;
+export const DEFAULT_PAGE_DELAY_MS = 8_000;
+export const DEFAULT_PAGE_DELAY_JITTER_MS = 12_000;
 
 export const searchProfileSchema = z.object({
   id: z.string().min(1),
@@ -41,7 +50,14 @@ export type RunRecord = {
   id: number;
   startedAt: string;
   searchCount: number;
+  runMode: RunMode;
   maxPages: number;
+  zeroNewJobsThreshold: number;
+  emergencyMaxPages: number;
+  searchLaunchDelayMs: number;
+  searchLaunchJitterMs: number;
+  pageDelayMs: number;
+  pageDelayJitterMs: number;
 };
 
 export type RunTarget = {
@@ -52,7 +68,14 @@ export type RunTarget = {
   keywords: string;
   remote: boolean;
   location: string;
+  runMode: RunMode;
   maxPages: number;
+  zeroNewJobsThreshold: number;
+  emergencyMaxPages: number;
+  searchLaunchDelayMs: number;
+  searchLaunchJitterMs: number;
+  pageDelayMs: number;
+  pageDelayJitterMs: number;
   pagesCaptured: number;
   status: RunTargetStatus;
   stopReason: string | null;
@@ -69,6 +92,44 @@ export const runTargetStateUpdateSchema = z.object({
 });
 
 export type RunTargetStateUpdate = z.infer<typeof runTargetStateUpdateSchema>;
+
+export const runRequestSchema = z.object({
+  locations: z.array(z.string()).optional().default([]),
+  mode: z.enum(runModeValues).optional().default("fixed"),
+  maxPages: z.number().int().min(1).optional().default(DEFAULT_FIXED_MAX_PAGES),
+  zeroNewJobsThreshold: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .default(DEFAULT_AUTO_ZERO_NEW_JOBS_THRESHOLD),
+  searchLaunchDelayMs: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .default(DEFAULT_SEARCH_LAUNCH_DELAY_MS),
+  searchLaunchJitterMs: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .default(DEFAULT_SEARCH_LAUNCH_JITTER_MS),
+  pageDelayMs: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .default(DEFAULT_PAGE_DELAY_MS),
+  pageDelayJitterMs: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .default(DEFAULT_PAGE_DELAY_JITTER_MS)
+});
+
+export type RunRequest = z.infer<typeof runRequestSchema>;
 
 export type JobRecord = {
   id: number;

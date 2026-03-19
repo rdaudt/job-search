@@ -1,5 +1,6 @@
 import { parse } from "csv-parse/sync";
 import { searchProfileSchema, type SearchProfile } from "../shared/types.js";
+import { assertCanadianLocation } from "../shared/location-utils.js";
 
 function normalizeBoolean(value: string): boolean {
   const normalized = value.trim().toLowerCase();
@@ -11,11 +12,13 @@ export function parseSearchProfilesFromJson(raw: string): SearchProfile[] {
   if (!Array.isArray(parsed)) {
     throw new Error("JSON import must be an array of search profiles.");
   }
-  return parsed.map((entry, index) =>
-    searchProfileSchema.parse(entry, {
+  return parsed.map((entry, index) => {
+    const profile = searchProfileSchema.parse(entry, {
       path: [index]
-    }),
-  );
+    });
+    assertCanadianLocation(profile.location, `Location for search '${profile.name}'`);
+    return profile;
+  });
 }
 
 export function parseSearchProfilesFromCsv(raw: string): SearchProfile[] {
@@ -25,8 +28,8 @@ export function parseSearchProfilesFromCsv(raw: string): SearchProfile[] {
     trim: true
   }) as Record<string, string>[];
 
-  return rows.map((row, index) =>
-    searchProfileSchema.parse(
+  return rows.map((row, index) => {
+    const profile = searchProfileSchema.parse(
       {
         id: row.id,
         name: row.name,
@@ -37,8 +40,10 @@ export function parseSearchProfilesFromCsv(raw: string): SearchProfile[] {
       {
         path: [index]
       },
-    ),
-  );
+    );
+    assertCanadianLocation(profile.location, `Location for search '${profile.name}'`);
+    return profile;
+  });
 }
 
 export function parseSearchProfilesFile(filename: string, content: string): SearchProfile[] {

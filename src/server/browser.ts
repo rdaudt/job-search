@@ -1,7 +1,26 @@
 import { spawn } from "node:child_process";
 
-export async function openSearchUrls(urls: string[]): Promise<void> {
-  for (const url of urls) {
+type SearchLaunchPacing = {
+  searchLaunchDelayMs: number;
+  searchLaunchJitterMs: number;
+};
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
+}
+
+function randomDelayMs(baseDelayMs: number, jitterMs: number): number {
+  if (jitterMs <= 0) {
+    return baseDelayMs;
+  }
+
+  return baseDelayMs + Math.floor(Math.random() * (jitterMs + 1));
+}
+
+export async function openSearchUrls(urls: string[], pacing: SearchLaunchPacing): Promise<void> {
+  for (const [index, url] of urls.entries()) {
     const command =
       process.platform === "win32"
         ? { executable: "rundll32", args: ["url.dll,FileProtocolHandler", url] }
@@ -15,5 +34,9 @@ export async function openSearchUrls(urls: string[]): Promise<void> {
     });
 
     child.unref();
+
+    if (index < urls.length - 1) {
+      await wait(randomDelayMs(pacing.searchLaunchDelayMs, pacing.searchLaunchJitterMs));
+    }
   }
 }

@@ -10,6 +10,11 @@ type CaptureListing = {
   summary?: string;
 };
 
+type InterruptionKind =
+  | "indeed-verification-page"
+  | "indeed-signin-gate"
+  | "indeed-access-denied";
+
 function textContent(element: Element | null): string {
   return element?.textContent?.replace(/\s+/g, " ").trim() ?? "";
 }
@@ -56,10 +61,57 @@ function buildCanonicalUrl(sourceJobId: string | undefined, href: string): strin
 function nextPageUrl(): string | null {
   const nextLink =
     document.querySelector<HTMLAnchorElement>("a[data-testid='pagination-page-next']") ??
+    document.querySelector<HTMLAnchorElement>("[data-testid='pagination-page-next'] a") ??
     document.querySelector<HTMLAnchorElement>("a[aria-label*='Next']") ??
     document.querySelector<HTMLAnchorElement>("a[aria-label*='next']") ??
+    document.querySelector<HTMLAnchorElement>("a[aria-label='Next Page']") ??
+    document.querySelector<HTMLAnchorElement>("a[aria-label='Next page']") ??
+    document.querySelector<HTMLAnchorElement>("a[rel='next']") ??
+    document.querySelector<HTMLAnchorElement>("nav[aria-label*='Pagination'] a[href*='start=']") ??
     document.querySelector<HTMLAnchorElement>("nav a[href*='/jobs'][aria-label*='Page']");
   return absoluteUrl(nextLink?.getAttribute("href") ?? null);
+}
+
+function detectInterruptionKind(): InterruptionKind | null {
+  const title = document.title.trim().toLowerCase();
+  const bodyText = document.body?.textContent?.replace(/\s+/g, " ").toLowerCase() ?? "";
+  const currentUrl = window.location.href.toLowerCase();
+
+  if (currentUrl.includes("secure.indeed.com/auth") || title.includes("sign in | indeed accounts")) {
+    return "indeed-signin-gate";
+  }
+
+  if (title.includes("blocked") || bodyText.includes("access denied") || bodyText.includes("request has been blocked")) {
+    return "indeed-access-denied";
+  }
+
+  if (!bodyText) {
+    return null;
+  }
+
+  const hasChallengeMarker = Boolean(
+    document.querySelector("iframe[src*='captcha'], iframe[src*='challenge'], form[action*='captcha'], input[name*='captcha'], #challenge-running"),
+  );
+  const hasVerificationSignal =
+    title.includes("just a moment") ||
+    title.includes("security check") ||
+    title.includes("verify you are human") ||
+    bodyText.includes("verify you are human") ||
+    bodyText.includes("complete the security check") ||
+    bodyText.includes("enter the characters you see below") ||
+    bodyText.includes("just a moment") ||
+    bodyText.includes("additional verification required") ||
+    bodyText.includes("enable javascript to complete the security check") ||
+    bodyText.includes("unusual traffic");
+
+  if (
+    hasChallengeMarker ||
+    (hasVerificationSignal && !document.querySelector("[data-jk], .job_seen_beacon, [data-testid='slider_item']"))
+  ) {
+    return "indeed-verification-page";
+  }
+
+  return null;
 }
 
 function extractListings(): CaptureListing[] {
@@ -130,14 +182,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const pageNumber = parseIndeedPageNumber(pageUrl);
   const nextUrl = nextPageUrl();
   const listings = extractListings();
+  const interruptionKind = detectInterruptionKind();
+  const challengeDetected = interruptionKind === "indeed-verification-page" || interruptionKind === "indeed-access-denied";
   if (!listings.length) {
     sendResponse({
-      error: "No visible job cards were detected on this page.",
+      error:
+        interruptionKind === "indeed-verification-page"
+          ? "Indeed verification page detected."
+          : interruptionKind === "indeed-signin-gate"
+            ? "Indeed sign-in page detected."
+            : interruptionKind === "indeed-access-denied"
+              ? "Indeed access denied page detected."
+              : "No visible job cards were detected on this page.",
       pageContext: {
         runTargetId: runTargetId ?? null,
         pageUrl,
         pageNumber,
-        nextPageUrl: nextUrl
+        nextPageUrl: nextUrl,
+        listingCount: 0,
+        isChallengePage: challengeDetected,
+        interruptionKind
       }
     });
     return false;
@@ -150,6 +214,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       pageUrl,
       pageNumber,
       nextPageUrl: nextUrl,
+      listingCount: listings.length,
+      isChallengePage: challengeDetected,
+      interruptionKind,
       listings
     }
   });

@@ -5,10 +5,15 @@ import multer from "multer";
 import { indeedAdapter } from "../shared/indeed.js";
 import {
   capturePayloadSchema,
+  DEFAULT_AUTO_ZERO_NEW_JOBS_THRESHOLD,
+  DEFAULT_EMERGENCY_MAX_PAGES,
+  DEFAULT_FIXED_MAX_PAGES,
+  runRequestSchema,
   runTargetStateUpdateSchema,
   statusValues,
   type AppSummary,
-  type JobStatus
+  type JobStatus,
+  type RunMode
 } from "../shared/types.js";
 import { openSearchUrls } from "./browser.js";
 import { createDatabase, ensureDataDir } from "./db.js";
@@ -26,8 +31,11 @@ const repository = new Repository(database, indeedAdapter);
 const app = express();
 const upload = multer();
 const port = Number(process.env.PORT ?? 4312);
-const DEFAULT_MAX_PAGES = 1;
-const MAX_PAGES_LIMIT = 5;
+const MAX_FIXED_PAGES_LIMIT = 10;
+const MAX_ZERO_NEW_JOBS_THRESHOLD = 5;
+const MIN_ZERO_NEW_JOBS_THRESHOLD = 1;
+const EMERGENCY_MAX_PAGES = DEFAULT_EMERGENCY_MAX_PAGES;
+const MAX_DELAY_MS = 120_000;
 
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: "1mb" }));
@@ -42,12 +50,51 @@ function getSummary(): AppSummary {
   };
 }
 
-function normalizeMaxPages(value: unknown): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    return DEFAULT_MAX_PAGES;
+function normalizeRunConfig(rawBody: unknown): {
+  mode: RunMode;
+  maxPages: number;
+  zeroNewJobsThreshold: number;
+  emergencyMaxPages: number;
+  searchLaunchDelayMs: number;
+  searchLaunchJitterMs: number;
+  pageDelayMs: number;
+  pageDelayJitterMs: number;
+} {
+  const parsed = runRequestSchema.parse(rawBody ?? {});
+  const mode = parsed.mode;
+  const maxPages = Math.min(Math.max(parsed.maxPages, 1), MAX_FIXED_PAGES_LIMIT);
+  const zeroNewJobsThreshold = Math.min(
+    Math.max(parsed.zeroNewJobsThreshold, MIN_ZERO_NEW_JOBS_THRESHOLD),
+    MAX_ZERO_NEW_JOBS_THRESHOLD,
+  );
+  const searchLaunchDelayMs = Math.min(Math.max(parsed.searchLaunchDelayMs, 0), MAX_DELAY_MS);
+  const searchLaunchJitterMs = Math.min(Math.max(parsed.searchLaunchJitterMs, 0), MAX_DELAY_MS);
+  const pageDelayMs = Math.min(Math.max(parsed.pageDelayMs, 0), MAX_DELAY_MS);
+  const pageDelayJitterMs = Math.min(Math.max(parsed.pageDelayJitterMs, 0), MAX_DELAY_MS);
+
+  if (mode === "auto") {
+    return {
+      mode,
+      maxPages: DEFAULT_FIXED_MAX_PAGES,
+      zeroNewJobsThreshold,
+      emergencyMaxPages: EMERGENCY_MAX_PAGES,
+      searchLaunchDelayMs,
+      searchLaunchJitterMs,
+      pageDelayMs,
+      pageDelayJitterMs
+    };
   }
-  return Math.min(parsed, MAX_PAGES_LIMIT);
+
+  return {
+    mode,
+    maxPages,
+    zeroNewJobsThreshold: DEFAULT_AUTO_ZERO_NEW_JOBS_THRESHOLD,
+    emergencyMaxPages: EMERGENCY_MAX_PAGES,
+    searchLaunchDelayMs,
+    searchLaunchJitterMs,
+    pageDelayMs,
+    pageDelayJitterMs
+  };
 }
 
 app.get("/api/summary", (_req, res) => {
@@ -82,15 +129,30 @@ app.post("/api/runs", async (req, res) => {
 
     const requestedLocations = normalizeRunLocations(Array.isArray(req.body?.locations) ? req.body.locations : []);
     const runTargetTemplates = buildRunTargetTemplates(searches, requestedLocations);
-    const maxPages = normalizeMaxPages(req.body?.maxPages);
-    const { run, targets } = repository.createRun(runTargetTemplates, maxPages);
+    const runConfig = normalizeRunConfig(req.body);
+    const { run, targets } = repository.createRun(runTargetTemplates, {
+      runMode: runConfig.mode,
+      maxPages: runConfig.maxPages,
+      zeroNewJobsThreshold: runConfig.zeroNewJobsThreshold,
+      emergencyMaxPages: runConfig.emergencyMaxPages,
+      searchLaunchDelayMs: runConfig.searchLaunchDelayMs,
+      searchLaunchJitterMs: runConfig.searchLaunchJitterMs,
+      pageDelayMs: runConfig.pageDelayMs,
+      pageDelayJitterMs: runConfig.pageDelayJitterMs
+    });
     const urls = targets.map((target) => indeedAdapter.buildSearchUrl(target));
-    await openSearchUrls(urls);
+    void openSearchUrls(urls, {
+      searchLaunchDelayMs: runConfig.searchLaunchDelayMs,
+      searchLaunchJitterMs: runConfig.searchLaunchJitterMs
+    });
     res.json({ run, urls, targets });
   } catch (error) {
-    res.status(500).json({
-      error: error instanceof Error ? error.message : "Failed to launch search URLs."
-    });
+    const message = error instanceof Error ? error.message : "Failed to launch search URLs.";
+    const statusCode =
+      message.includes("Canadian location") || message.includes("Import at least one search profile")
+        ? 400
+        : 500;
+    res.status(statusCode).json({ error: message });
   }
 });
 

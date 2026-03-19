@@ -154,11 +154,43 @@ export function parseRunLocation(rawLocation: string): ParsedRunLocation {
 }
 
 export function selectIndeedHostForLocation(location: string): string {
-  const parsed = parseRunLocation(location);
-  if (parsed.countryCode === "ca") {
-    return "ca.indeed.com";
+  return "ca.indeed.com";
+}
+
+export function isCanadianLocation(location: string): boolean {
+  if (!location.trim()) {
+    return true;
   }
-  return "www.indeed.com";
+
+  return parseRunLocation(location).countryCode === "ca";
+}
+
+export function assertCanadianLocation(location: string, label = "Location"): void {
+  if (!isCanadianLocation(location)) {
+    throw new Error(`${label} must be a Canadian location.`);
+  }
+}
+
+export function listingMatchesCanadianScope(listingLocation: string, allowRemote = false): boolean {
+  const normalizedListing = normalizeText(listingLocation);
+  if (!normalizedListing) {
+    return false;
+  }
+
+  const listing = parseRunLocation(listingLocation);
+  if (listing.countryCode === "us") {
+    return false;
+  }
+  if (listing.countryCode === "ca") {
+    return true;
+  }
+
+  const isRemoteListing = /\bremote\b/.test(normalizedListing);
+  if (allowRemote && isRemoteListing) {
+    return !/\b(united states|usa)\b/.test(normalizedListing);
+  }
+
+  return false;
 }
 
 export function listingMatchesRunLocation(listingLocation: string, runLocation: string, allowRemote = false): boolean {

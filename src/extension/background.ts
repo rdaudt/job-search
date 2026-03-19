@@ -1,10 +1,12 @@
-import { attachRunTargetMetadata } from "../shared/indeed.js";
+import { attachRunTargetMetadata, normalizeIndeedResultsPageUrl } from "../shared/indeed.js";
 import type { CapturePayload, RunTarget, RunTargetStateUpdate } from "../shared/types.js";
+import { nextZeroNewPagesCount, resolvePaginationStopReason } from "./pagination.js";
 import { resolveRunTargetIdFromUrl } from "./profile-matching.js";
 
 const API_URL = "http://127.0.0.1:4312/api/captures";
 const SUMMARY_URL = "http://127.0.0.1:4312/api/summary";
 const AUTO_CAPTURE_DELAYS_MS = [1500, 4500, 9000];
+const CHALLENGE_CAPTURE_DELAYS_MS = [1500, 4500, 9000, 15000, 30000, 45000];
 const autoCaptureStateByTabId = new Map<number, AutoCaptureState>();
 
 type AppSummary = {
@@ -13,18 +15,32 @@ type AppSummary = {
 
 type AutoCaptureState = {
   currentUrl: string;
+  currentNormalizedUrl: string;
   attemptIndex: number;
   success: boolean;
   visitedPageUrls: string[];
   runTargetId: string | null;
+  runMode: RunTarget["runMode"] | null;
   maxPages: number | null;
+  zeroNewJobsThreshold: number | null;
+  emergencyMaxPages: number | null;
+  consecutiveZeroNewPages: number;
+  lastFailureWasChallenge: boolean;
 };
+
+type InterruptionKind =
+  | "indeed-verification-page"
+  | "indeed-signin-gate"
+  | "indeed-access-denied";
 
 type CapturePageContext = {
   runTargetId: string | null;
   pageUrl: string;
   pageNumber: number;
   nextPageUrl: string | null;
+  listingCount: number;
+  isChallengePage: boolean;
+  interruptionKind: InterruptionKind | null;
 };
 
 type ContentCaptureResponse =
@@ -32,6 +48,9 @@ type ContentCaptureResponse =
       payload: Omit<CapturePayload, "runTargetId"> & {
         runTargetId: string | null;
         nextPageUrl: string | null;
+        listingCount: number;
+        isChallengePage: boolean;
+        interruptionKind: InterruptionKind | null;
       };
       error?: never;
       pageContext?: never;
@@ -48,13 +67,52 @@ type CaptureTabResult = {
   runTarget: RunTarget;
   pageNumber: number;
   pageUrl: string;
+  normalizedPageUrl: string;
   nextPageUrl: string | null;
+  normalizedNextPageUrl: string | null;
+  listingCount: number;
+  isChallengePage: boolean;
 };
 
 type CaptureFailure = Error & {
   pageContext?: CapturePageContext;
   runTarget?: RunTarget;
 };
+
+function initialAutoCaptureState(url: string): AutoCaptureState {
+  return {
+    currentUrl: url,
+    currentNormalizedUrl: normalizeIndeedResultsPageUrl(url),
+    attemptIndex: 0,
+    success: false,
+    visitedPageUrls: [],
+    runTargetId: null,
+    runMode: null,
+    maxPages: null,
+    zeroNewJobsThreshold: null,
+    emergencyMaxPages: null,
+    consecutiveZeroNewPages: 0,
+    lastFailureWasChallenge: false
+  };
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
+}
+
+function randomDelayMs(baseDelayMs: number, jitterMs: number): number {
+  if (jitterMs <= 0) {
+    return baseDelayMs;
+  }
+
+  return baseDelayMs + Math.floor(Math.random() * (jitterMs + 1));
+}
+
+function isRetriableInterruption(kind: InterruptionKind | null | undefined): boolean {
+  return kind === "indeed-verification-page" || kind === "indeed-access-denied";
+}
 
 async function fetchLatestRunTargets(): Promise<RunTarget[]> {
   const response = await fetch(SUMMARY_URL);
@@ -64,14 +122,6 @@ async function fetchLatestRunTargets(): Promise<RunTarget[]> {
 
   const summary = (await response.json()) as AppSummary;
   return summary.latestRunTargets;
-}
-
-function normalizePageUrl(pageUrl: string): string {
-  const parsed = new URL(pageUrl);
-  parsed.hash = "";
-  parsed.searchParams.delete("jobFinderProfile");
-  parsed.searchParams.delete("jobFinderRunTarget");
-  return parsed.toString();
 }
 
 async function resolveRunTarget(pageContext: CapturePageContext): Promise<RunTarget | null> {
@@ -111,7 +161,10 @@ async function captureTab(tabId: number): Promise<CaptureTabResult> {
         runTargetId: response.payload.runTargetId ?? null,
         pageUrl: response.payload.pageUrl,
         pageNumber: response.payload.pageNumber,
-        nextPageUrl: response.payload.nextPageUrl ?? null
+        nextPageUrl: response.payload.nextPageUrl ?? null,
+        listingCount: response.payload.listingCount,
+        isChallengePage: response.payload.isChallengePage,
+        interruptionKind: response.payload.interruptionKind ?? null
       }
     : response?.pageContext;
 
@@ -153,12 +206,17 @@ async function captureTab(tabId: number): Promise<CaptureTabResult> {
   chrome.action.setBadgeBackgroundColor({ color: "#1b4332", tabId });
   chrome.action.setBadgeText({ tabId, text: badgeText });
 
+  const nextPageUrl = pageContext.nextPageUrl ? attachRunTargetMetadata(pageContext.nextPageUrl, runTarget) : null;
   return {
     ...result,
     runTarget,
     pageNumber: pageContext.pageNumber,
     pageUrl: pageContext.pageUrl,
-    nextPageUrl: pageContext.nextPageUrl ? attachRunTargetMetadata(pageContext.nextPageUrl, runTarget) : null
+    normalizedPageUrl: normalizeIndeedResultsPageUrl(pageContext.pageUrl),
+    nextPageUrl,
+    normalizedNextPageUrl: nextPageUrl ? normalizeIndeedResultsPageUrl(nextPageUrl) : null,
+    listingCount: pageContext.listingCount,
+    isChallengePage: pageContext.isChallengePage
   };
 }
 
@@ -189,47 +247,87 @@ async function finalizeRunTarget(
 async function continuePagination(tabId: number, result: CaptureTabResult): Promise<void> {
   const currentState = autoCaptureStateByTabId.get(tabId);
   const visitedPageUrls = new Set(currentState?.visitedPageUrls ?? []);
-  visitedPageUrls.add(normalizePageUrl(result.pageUrl));
+  visitedPageUrls.add(result.normalizedPageUrl);
+  const consecutiveZeroNewPages = nextZeroNewPagesCount(currentState?.consecutiveZeroNewPages ?? 0, result.inserted);
 
-  autoCaptureStateByTabId.set(tabId, {
+  const nextState: AutoCaptureState = {
     currentUrl: result.pageUrl,
+    currentNormalizedUrl: result.normalizedPageUrl,
     attemptIndex: 0,
     success: true,
     visitedPageUrls: [...visitedPageUrls],
     runTargetId: result.runTarget.id,
-    maxPages: result.runTarget.maxPages
-  });
+    runMode: result.runTarget.runMode,
+    maxPages: result.runTarget.maxPages,
+    zeroNewJobsThreshold: result.runTarget.zeroNewJobsThreshold,
+    emergencyMaxPages: result.runTarget.emergencyMaxPages,
+    consecutiveZeroNewPages,
+    lastFailureWasChallenge: false
+  };
+  autoCaptureStateByTabId.set(tabId, nextState);
 
-  let stopReason: string | null = null;
-  if (result.pageNumber >= result.runTarget.maxPages) {
-    stopReason = "page-limit-reached";
-  } else if (!result.nextPageUrl) {
-    stopReason = "no-next-page";
-  } else if (visitedPageUrls.has(normalizePageUrl(result.nextPageUrl))) {
-    stopReason = "repeated-page-url";
-  }
+  const stopReason = resolvePaginationStopReason(
+    {
+      runMode: result.runTarget.runMode,
+      maxPages: result.runTarget.maxPages,
+      zeroNewJobsThreshold: result.runTarget.zeroNewJobsThreshold,
+      emergencyMaxPages: result.runTarget.emergencyMaxPages,
+      consecutiveZeroNewPages,
+      visitedPageUrls: [...visitedPageUrls]
+    },
+    {
+      pageNumber: result.pageNumber,
+      nextPageUrl: result.nextPageUrl,
+      normalizedNextPageUrl: result.normalizedNextPageUrl,
+      normalizedCurrentPageUrl: result.normalizedPageUrl,
+      inserted: result.inserted,
+      isChallengePage: result.isChallengePage
+    },
+  );
 
   if (stopReason) {
     await finalizeRunTarget(result.runTarget, "completed", stopReason, result.pageNumber, result.pageUrl);
     return;
   }
 
+  if (!result.nextPageUrl) {
+    await finalizeRunTarget(result.runTarget, "completed", "no-next-page", result.pageNumber, result.pageUrl);
+    return;
+  }
+
+  await wait(randomDelayMs(result.runTarget.pageDelayMs, result.runTarget.pageDelayJitterMs));
   await chrome.tabs.update(tabId, { url: result.nextPageUrl });
 }
 
 async function handleCaptureFailure(tabId: number, error: unknown): Promise<void> {
   const typedError = error instanceof Error ? (error as CaptureFailure) : new Error(String(error));
+  const currentState = autoCaptureStateByTabId.get(tabId);
+  const normalizedFailurePageUrl = typedError.pageContext?.pageUrl
+    ? normalizeIndeedResultsPageUrl(typedError.pageContext.pageUrl)
+    : null;
+  if (
+    currentState?.success &&
+    normalizedFailurePageUrl &&
+    currentState.visitedPageUrls.includes(normalizedFailurePageUrl)
+  ) {
+    return;
+  }
+
   console.error("Capture failed", typedError);
   chrome.action.setBadgeBackgroundColor({ color: "#9d0208", tabId });
   chrome.action.setBadgeText({ tabId, text: "!" });
 
   if (typedError.runTarget) {
-    const stopReason = typedError.message.includes("No visible job cards")
-      ? "no-job-cards-detected"
-      : "capture-failed";
+    const stopReason =
+      typedError.pageContext?.interruptionKind ??
+      (typedError.pageContext?.isChallengePage
+        ? "challenge-detected"
+        : typedError.message.includes("No visible job cards")
+          ? "no-job-cards-detected"
+          : "capture-failed");
     await finalizeRunTarget(
       typedError.runTarget,
-      "failed",
+      typedError.pageContext?.interruptionKind || typedError.pageContext?.isChallengePage ? "completed" : "failed",
       stopReason,
       typedError.pageContext?.pageNumber,
       typedError.pageContext?.pageUrl,
@@ -240,32 +338,37 @@ async function handleCaptureFailure(tabId: number, error: unknown): Promise<void
 }
 
 function scheduleAutoCapture(tabId: number, url: string, attemptIndex: number): void {
-  const delay = AUTO_CAPTURE_DELAYS_MS[attemptIndex];
+  const currentState = autoCaptureStateByTabId.get(tabId);
+  const retrySchedule = currentState?.lastFailureWasChallenge ? CHALLENGE_CAPTURE_DELAYS_MS : AUTO_CAPTURE_DELAYS_MS;
+  const delay = retrySchedule[attemptIndex];
   if (delay === undefined) {
     return;
   }
 
   globalThis.setTimeout(() => {
-    const currentState = autoCaptureStateByTabId.get(tabId);
-    if (!currentState || currentState.currentUrl !== url || currentState.success || currentState.attemptIndex !== attemptIndex) {
+    const latestState = autoCaptureStateByTabId.get(tabId);
+    if (!latestState || latestState.currentUrl !== url || latestState.success || latestState.attemptIndex !== attemptIndex) {
       return;
     }
 
     void captureTab(tabId)
       .then((result) => continuePagination(tabId, result))
       .catch((error) => {
+        const interruptionKind =
+          error instanceof Error ? (error as CaptureFailure).pageContext?.interruptionKind : null;
+        const challengeFailure =
+          error instanceof Error &&
+          ((error as CaptureFailure).pageContext?.isChallengePage === true || isRetriableInterruption(interruptionKind));
+        const activeSchedule = challengeFailure ? CHALLENGE_CAPTURE_DELAYS_MS : retrySchedule;
         const nextAttemptIndex = attemptIndex + 1;
-        if (AUTO_CAPTURE_DELAYS_MS[nextAttemptIndex] !== undefined) {
+        if (activeSchedule[nextAttemptIndex] !== undefined) {
           autoCaptureStateByTabId.set(tabId, {
-            ...(currentState ?? {
-              currentUrl: url,
-              visitedPageUrls: [],
-              runTargetId: null,
-              maxPages: null
-            }),
+            ...(latestState ?? initialAutoCaptureState(url)),
             currentUrl: url,
+            currentNormalizedUrl: normalizeIndeedResultsPageUrl(url),
             attemptIndex: nextAttemptIndex,
-            success: false
+            success: false,
+            lastFailureWasChallenge: challengeFailure
           });
           scheduleAutoCapture(tabId, url, nextAttemptIndex);
           return;
@@ -281,14 +384,7 @@ chrome.action.onClicked.addListener(async (tab) => {
     return;
   }
 
-  autoCaptureStateByTabId.set(tab.id, {
-    currentUrl: tab.url,
-    attemptIndex: 0,
-    success: false,
-    visitedPageUrls: [],
-    runTargetId: null,
-    maxPages: null
-  });
+  autoCaptureStateByTabId.set(tab.id, initialAutoCaptureState(tab.url));
 
   try {
     const result = await captureTab(tab.id);
@@ -304,17 +400,23 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 
   const currentState = autoCaptureStateByTabId.get(tabId);
-  if (currentState?.currentUrl === tab.url && (currentState.success || currentState.attemptIndex === 0)) {
+  const normalizedTabUrl = normalizeIndeedResultsPageUrl(tab.url);
+  if (
+    currentState &&
+    (currentState.currentNormalizedUrl === normalizedTabUrl ||
+      currentState.visitedPageUrls.includes(normalizedTabUrl)) &&
+    (currentState.success || currentState.attemptIndex === 0)
+  ) {
     return;
   }
 
   autoCaptureStateByTabId.set(tabId, {
+    ...(currentState ?? initialAutoCaptureState(tab.url)),
     currentUrl: tab.url,
+    currentNormalizedUrl: normalizedTabUrl,
     attemptIndex: 0,
     success: false,
-    visitedPageUrls: currentState?.visitedPageUrls ?? [],
-    runTargetId: currentState?.runTargetId ?? null,
-    maxPages: currentState?.maxPages ?? null
+    lastFailureWasChallenge: false
   });
   scheduleAutoCapture(tabId, tab.url, 0);
 });

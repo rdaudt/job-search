@@ -39,6 +39,15 @@
           <button id="run-searches" type="button">Open Indeed Searches</button>
         </div>
         <div class="stack stack-vertical">
+          <label class="field-label" for="run-mode">Run mode</label>
+          <select id="run-mode">
+            <option value="fixed">Fixed pages</option>
+            <option value="auto">Auto until stop</option>
+          </select>
+          <p id="run-mode-helper" class="helper">
+            Fixed pages stops at a chosen page cap. Auto until stop follows pagination until a stop
+            rule fires.
+          </p>
           <label class="field-label" for="max-pages">Pages per search</label>
           <select id="max-pages">
             <option value="1">1 page</option>
@@ -51,6 +60,58 @@
             The extension will capture page 1, move to the next results page in the same tab, and
             stop when it reaches this limit or when Indeed has no next page.
           </p>
+          <label class="field-label" for="zero-new-jobs-threshold">Auto stop after this many zero-new pages</label>
+          <select id="zero-new-jobs-threshold">
+            <option value="1">1 page</option>
+            <option value="2">2 pages</option>
+            <option value="3">3 pages</option>
+            <option value="4">4 pages</option>
+            <option value="5">5 pages</option>
+          </select>
+          <p class="helper">
+            In auto mode, the extension stops after this many consecutive pages that add no new
+            jobs. A hard emergency ceiling of 50 pages still applies.
+          </p>
+          <label class="field-label" for="search-launch-delay">Delay between launched searches</label>
+          <select id="search-launch-delay">
+            <option value="0">0s</option>
+            <option value="10000">10s</option>
+            <option value="15000">15s</option>
+            <option value="20000">20s</option>
+            <option value="30000">30s</option>
+          </select>
+          <label class="field-label" for="search-launch-jitter">Launch jitter</label>
+          <select id="search-launch-jitter">
+            <option value="0">0s</option>
+            <option value="5000">5s</option>
+            <option value="10000">10s</option>
+            <option value="20000">20s</option>
+            <option value="30000">30s</option>
+          </select>
+          <p class="helper">
+            Searches open sequentially. The app waits the base delay plus up to the selected jitter
+            before opening the next search tab.
+          </p>
+          <label class="field-label" for="page-delay">Delay before next results page</label>
+          <select id="page-delay">
+            <option value="0">0s</option>
+            <option value="5000">5s</option>
+            <option value="8000">8s</option>
+            <option value="10000">10s</option>
+            <option value="15000">15s</option>
+          </select>
+          <label class="field-label" for="page-delay-jitter">Next-page jitter</label>
+          <select id="page-delay-jitter">
+            <option value="0">0s</option>
+            <option value="5000">5s</option>
+            <option value="10000">10s</option>
+            <option value="12000">12s</option>
+            <option value="20000">20s</option>
+          </select>
+          <p class="helper">
+            After a successful capture, the extension waits this long plus jitter before opening
+            the next Indeed results page.
+          </p>
           <label class="field-label" for="run-locations">Run locations</label>
           <textarea
             id="run-locations"
@@ -60,10 +121,11 @@
           <p id="run-location-preview" class="helper">
             Leave blank to use each imported profile's default location.
           </p>
+          <p class="helper">Canadian locations only.</p>
         </div>
         <p class="helper">
           This opens one browser tab per search target. The extension auto-captures the visible
-          page and follows the next page in the same tab until it reaches the selected limit.
+          page and follows the next page in the same tab based on the selected run mode.
         </p>
         <div id="runs" class="runs empty-state">No runs yet.</div>
       </section>

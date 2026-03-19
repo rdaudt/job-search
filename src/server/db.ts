@@ -41,11 +41,41 @@ function ensureRunColumns(database: Database.Database): void {
   if (!tableHasColumn(database, "runs", "max_pages")) {
     database.exec("ALTER TABLE runs ADD COLUMN max_pages INTEGER NOT NULL DEFAULT 1");
   }
+  if (!tableHasColumn(database, "runs", "run_mode")) {
+    database.exec("ALTER TABLE runs ADD COLUMN run_mode TEXT NOT NULL DEFAULT 'fixed'");
+  }
+  if (!tableHasColumn(database, "runs", "zero_new_jobs_threshold")) {
+    database.exec("ALTER TABLE runs ADD COLUMN zero_new_jobs_threshold INTEGER NOT NULL DEFAULT 2");
+  }
+  if (!tableHasColumn(database, "runs", "emergency_max_pages")) {
+    database.exec("ALTER TABLE runs ADD COLUMN emergency_max_pages INTEGER NOT NULL DEFAULT 50");
+  }
+  if (!tableHasColumn(database, "runs", "search_launch_delay_ms")) {
+    database.exec("ALTER TABLE runs ADD COLUMN search_launch_delay_ms INTEGER NOT NULL DEFAULT 20000");
+  }
+  if (!tableHasColumn(database, "runs", "search_launch_jitter_ms")) {
+    database.exec("ALTER TABLE runs ADD COLUMN search_launch_jitter_ms INTEGER NOT NULL DEFAULT 20000");
+  }
+  if (!tableHasColumn(database, "runs", "page_delay_ms")) {
+    database.exec("ALTER TABLE runs ADD COLUMN page_delay_ms INTEGER NOT NULL DEFAULT 8000");
+  }
+  if (!tableHasColumn(database, "runs", "page_delay_jitter_ms")) {
+    database.exec("ALTER TABLE runs ADD COLUMN page_delay_jitter_ms INTEGER NOT NULL DEFAULT 12000");
+  }
 }
 
 function ensureRunTargetColumns(database: Database.Database): void {
   if (!tableHasColumn(database, "run_targets", "max_pages")) {
     database.exec("ALTER TABLE run_targets ADD COLUMN max_pages INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!tableHasColumn(database, "run_targets", "run_mode")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN run_mode TEXT NOT NULL DEFAULT 'fixed'");
+  }
+  if (!tableHasColumn(database, "run_targets", "zero_new_jobs_threshold")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN zero_new_jobs_threshold INTEGER NOT NULL DEFAULT 2");
+  }
+  if (!tableHasColumn(database, "run_targets", "emergency_max_pages")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN emergency_max_pages INTEGER NOT NULL DEFAULT 50");
   }
   if (!tableHasColumn(database, "run_targets", "pages_captured")) {
     database.exec("ALTER TABLE run_targets ADD COLUMN pages_captured INTEGER NOT NULL DEFAULT 0");
@@ -64,6 +94,18 @@ function ensureRunTargetColumns(database: Database.Database): void {
   }
   if (!tableHasColumn(database, "run_targets", "updated_at")) {
     database.exec("ALTER TABLE run_targets ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''");
+  }
+  if (!tableHasColumn(database, "run_targets", "search_launch_delay_ms")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN search_launch_delay_ms INTEGER NOT NULL DEFAULT 20000");
+  }
+  if (!tableHasColumn(database, "run_targets", "search_launch_jitter_ms")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN search_launch_jitter_ms INTEGER NOT NULL DEFAULT 20000");
+  }
+  if (!tableHasColumn(database, "run_targets", "page_delay_ms")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN page_delay_ms INTEGER NOT NULL DEFAULT 8000");
+  }
+  if (!tableHasColumn(database, "run_targets", "page_delay_jitter_ms")) {
+    database.exec("ALTER TABLE run_targets ADD COLUMN page_delay_jitter_ms INTEGER NOT NULL DEFAULT 12000");
   }
 }
 
@@ -95,7 +137,14 @@ export function createDatabase(dbPath: string): Database.Database {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       started_at TEXT NOT NULL,
       search_count INTEGER NOT NULL,
-      max_pages INTEGER NOT NULL DEFAULT 1
+      run_mode TEXT NOT NULL DEFAULT 'fixed',
+      max_pages INTEGER NOT NULL DEFAULT 1,
+      zero_new_jobs_threshold INTEGER NOT NULL DEFAULT 2,
+      emergency_max_pages INTEGER NOT NULL DEFAULT 50,
+      search_launch_delay_ms INTEGER NOT NULL DEFAULT 20000,
+      search_launch_jitter_ms INTEGER NOT NULL DEFAULT 20000,
+      page_delay_ms INTEGER NOT NULL DEFAULT 8000,
+      page_delay_jitter_ms INTEGER NOT NULL DEFAULT 12000
     );
 
     CREATE TABLE IF NOT EXISTS run_targets (
@@ -103,7 +152,14 @@ export function createDatabase(dbPath: string): Database.Database {
       run_id INTEGER NOT NULL,
       search_profile_id TEXT NOT NULL,
       location TEXT NOT NULL DEFAULT '',
+      run_mode TEXT NOT NULL DEFAULT 'fixed',
       max_pages INTEGER NOT NULL DEFAULT 1,
+      zero_new_jobs_threshold INTEGER NOT NULL DEFAULT 2,
+      emergency_max_pages INTEGER NOT NULL DEFAULT 50,
+      search_launch_delay_ms INTEGER NOT NULL DEFAULT 20000,
+      search_launch_jitter_ms INTEGER NOT NULL DEFAULT 20000,
+      page_delay_ms INTEGER NOT NULL DEFAULT 8000,
+      page_delay_jitter_ms INTEGER NOT NULL DEFAULT 12000,
       pages_captured INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'pending',
       stop_reason TEXT,
