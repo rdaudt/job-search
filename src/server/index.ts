@@ -1,3 +1,4 @@
+import "dotenv/config";
 import path from "node:path";
 import cors from "cors";
 import express from "express";
@@ -19,6 +20,8 @@ import {
 import { openSearchUrls } from "./browser.js";
 import { createDatabase, ensureDataDir } from "./db.js";
 import { parseSearchProfilesFile } from "./importers.js";
+import { OpenAIRelevanceClassifier } from "./relevance/openai-classifier.js";
+import { startRelevanceWorker } from "./relevance/worker.js";
 import { Repository } from "./repository.js";
 import { buildRunTargetTemplates, normalizeRunLocations } from "./run-targets.js";
 
@@ -28,6 +31,24 @@ const publicDir = path.join(distRoot, "public");
 const dataDir = ensureDataDir(rootDir);
 const database = createDatabase(path.join(dataDir, "job-search.sqlite"));
 const repository = new Repository(database, indeedAdapter);
+const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
+const openAiModel = process.env.OPENAI_MODEL?.trim() || "gpt-5.4";
+const openAiBaseUrl = process.env.OPENAI_BASE_URL?.trim();
+const openAiReasoningEffort = (() => {
+  const value = process.env.OPENAI_REASONING_EFFORT?.trim().toLowerCase();
+  if (value === "none" || value === "low" || value === "medium" || value === "high" || value === "xhigh") {
+    return value;
+  }
+  return "low";
+})();
+const relevanceClassifier = openAiApiKey
+  ? new OpenAIRelevanceClassifier({
+      apiKey: openAiApiKey,
+      model: openAiModel,
+      reasoningEffort: openAiReasoningEffort,
+      baseUrl: openAiBaseUrl
+    })
+  : null;
 
 const app = express();
 const upload = multer();
@@ -175,6 +196,12 @@ app.post("/api/captures", (req, res) => {
     }
 
     const result = repository.ingestCapture(payload);
+    if (relevanceClassifier) {
+      repository.queueRelevanceForRunTarget(payload.runTargetId, {
+        model: relevanceClassifier.model,
+        promptVersion: relevanceClassifier.promptVersion
+      });
+    }
     res.json(result);
   } catch (error) {
     res.status(400).json({
@@ -228,4 +255,12 @@ app.get("*", (_req, res) => {
 
 app.listen(port, () => {
   console.log(`Job Search Finder listening on http://127.0.0.1:${port}`);
+  if (relevanceClassifier) {
+    startRelevanceWorker(repository, relevanceClassifier);
+    console.log(
+      `OpenAI relevance worker enabled with model ${relevanceClassifier.model} (reasoning: ${openAiReasoningEffort})`,
+    );
+  } else {
+    console.log("OpenAI relevance worker disabled. Set OPENAI_API_KEY to enable AI job qualification.");
+  }
 });

@@ -251,6 +251,23 @@ th {
   text-align: center;
 }
 
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.job-relevance {
+  font-weight: 700;
+}
+
 .status-select {
   min-width: 110px;
   background: #edf4ee;

@@ -12,6 +12,7 @@ Current scope: the app is restricted to Canadian locations and uses `ca.indeed.c
 - Captures visible results from the active Indeed results page through a browser extension action.
 - Follows the next results page in the same tab using either a fixed page cap or an auto-stop mode with guardrails and configurable next-page pacing.
 - Lets each run choose whether previously captured jobs are kept cumulatively or deleted before the new run starts.
+- Can optionally qualify captured jobs with OpenAI relevance scoring per search profile.
 - Stores jobs in local SQLite with deduplication and status tracking.
 - Exports the current deduplicated job list as CSV.
 
@@ -80,6 +81,29 @@ npm start
 13. If run locations are provided in the UI, each imported search profile will run against each entered location. If the textarea is blank, the app falls back to each profile's default `location`.
 14. Indeed result tabs auto-capture after the page settles. In auto mode, the extension stops on no next page, repeated result URLs, verification/sign-in blocks, the zero-new threshold, or the hard 50-page emergency cap. Manual extension click remains available if needed.
 
+## Optional OpenAI Relevance Qualification
+
+If you set `OPENAI_API_KEY`, the app will asynchronously classify each captured job relative to each matching search profile and mark it as `Relevant`, `Borderline`, or `Irrelevant`.
+
+Recommended setup: copy [.env.example](/d:/roque-projects/job-search/.env.example) to `.env` in the project root and fill in your key.
+
+Example `.env`:
+
+```dotenv
+OPENAI_API_KEY=your-api-key
+OPENAI_MODEL=gpt-5.4
+OPENAI_REASONING_EFFORT=low
+```
+
+Notes:
+- Raw jobs are captured first and stored immediately.
+- Relevance classification runs in the background after capture.
+- The Review Jobs table hides AI-irrelevant jobs by default, but you can show them with the toggle.
+- If `OPENAI_API_KEY` is not set, jobs remain `Unreviewed`.
+- The app uses OpenAI's `responses` API. If `OPENAI_MODEL` is omitted, it now defaults to `gpt-5.4`.
+- `OPENAI_REASONING_EFFORT` is optional and accepts `none`, `low`, `medium`, `high`, or `xhigh`. The default is `low`.
+- The server loads `.env` automatically at startup, so `npm start` is enough once the file exists.
+
 ## Playwright With The Extension
 
 If you want an automated Chromium session with the unpacked extension loaded:
@@ -112,3 +136,4 @@ The script keeps the browser open until `Ctrl+C`. Make sure the app is already r
 - The latest run card shows per-target progress including mode, pages captured, current status, and stop reason.
 - Sequential launch pacing and next-page pacing are intended to reduce bursty automation patterns, but Indeed can still block pagination for some searches or sessions.
 - Importing a different search file changes the active search profiles for the next run, but cumulative mode keeps previously captured jobs unless you explicitly choose `Reset previous jobs`.
+- Relevance decisions are cached per job and search profile so repeated cumulative runs do not need to reclassify unchanged listings.

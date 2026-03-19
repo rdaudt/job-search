@@ -322,6 +322,78 @@ describe("Repository", () => {
     expect(targets[0].pageDelayMs).toBe(8_000);
   });
 
+  it("queues pending relevance and reuses cached decisions when unchanged", () => {
+    const repository = createRepository();
+    repository.replaceSearchProfiles([
+      {
+        id: "fitness",
+        name: "Fitness",
+        keywords: "fitness coach",
+        location: "Vancouver, BC",
+        remote: false
+      }
+    ]);
+
+    const searches = repository.listSearchProfiles();
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
+      runMode: "fixed",
+      maxPages: 1,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
+
+    repository.ingestCapture({
+      source: "indeed",
+      runTargetId: targets[0].id,
+      pageUrl: "https://ca.indeed.com/jobs?q=fitness+coach&l=Vancouver%2C+BC",
+      listings: [
+        {
+          sourceJobId: "jk-fit",
+          url: "https://ca.indeed.com/viewjob?jk=jk-fit",
+          title: "Fitness Coach",
+          company: "Acme",
+          location: "Vancouver, BC",
+          summary: "Coach clients in the gym"
+        }
+      ]
+    });
+
+    repository.queueRelevanceForRunTarget(targets[0].id, {
+      model: "gpt-5.4",
+      promptVersion: "relevance-v1"
+    });
+
+    let jobs = repository.listJobs();
+    expect(jobs[0].relevanceStatus).toBe("pending");
+
+    const pending = repository.getNextPendingRelevanceItem();
+    expect(pending?.jobId).toBe(jobs[0].id);
+
+    repository.completeRelevance(jobs[0].id, "fitness", "gpt-5.4", "relevance-v1", {
+      relevance: "relevant",
+      confidence: 0.92,
+      reason: "Strong title match",
+      signals: ["fitness", "coach"],
+      disqualifiers: []
+    });
+
+    repository.queueRelevanceForRunTarget(targets[0].id, {
+      model: "gpt-5.4",
+      promptVersion: "relevance-v1"
+    });
+
+    jobs = repository.listJobs();
+    expect(jobs[0].relevanceStatus).toBe("complete");
+    expect(jobs[0].relevanceLabel).toBe("relevant");
+    expect(jobs[0].relevanceReason).toBe("Strong title match");
+    expect(repository.getNextPendingRelevanceItem()).toBeNull();
+  });
+
   it("keeps captured jobs across search imports until a reset run is requested", () => {
     const repository = createRepository();
     repository.replaceSearchProfiles([

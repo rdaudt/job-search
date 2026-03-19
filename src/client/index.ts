@@ -18,6 +18,7 @@ const runLocationsInput = document.querySelector<HTMLTextAreaElement>("#run-loca
 const runLocationPreview = document.querySelector<HTMLElement>("#run-location-preview");
 const runsContainer = document.querySelector<HTMLElement>("#runs");
 const jobsBody = document.querySelector<HTMLElement>("#jobs-body");
+const hideIrrelevantInput = document.querySelector<HTMLInputElement>("#hide-irrelevant");
 const toast = document.querySelector<HTMLElement>("#toast");
 const SUMMARY_REFRESH_INTERVAL_MS = 4000;
 const RUN_LOCATIONS_STORAGE_KEY = "job-search-finder-run-locations";
@@ -29,6 +30,7 @@ const SEARCH_LAUNCH_DELAY_STORAGE_KEY = "job-search-finder-search-launch-delay";
 const SEARCH_LAUNCH_JITTER_STORAGE_KEY = "job-search-finder-search-launch-jitter";
 const PAGE_DELAY_STORAGE_KEY = "job-search-finder-page-delay";
 const PAGE_DELAY_JITTER_STORAGE_KEY = "job-search-finder-page-delay-jitter";
+const HIDE_IRRELEVANT_STORAGE_KEY = "job-search-finder-hide-irrelevant";
 
 let isLoadingSummary = false;
 let previousJobCount = 0;
@@ -114,6 +116,28 @@ function humanizeStopReason(reason: string | null): string {
 
 function formatSeconds(ms: number): string {
   return `${Math.round(ms / 1000)}s`;
+}
+
+function humanizeRelevance(job: JobRecord): string {
+  if (job.relevanceStatus === "pending") {
+    return "Pending AI review";
+  }
+  if (job.relevanceStatus === "failed") {
+    return "AI failed";
+  }
+  if (job.relevanceStatus === "unreviewed") {
+    return "Unreviewed";
+  }
+  if (job.relevanceLabel === "relevant") {
+    return "Relevant";
+  }
+  if (job.relevanceLabel === "borderline") {
+    return "Borderline";
+  }
+  if (job.relevanceLabel === "irrelevant") {
+    return "Irrelevant";
+  }
+  return "Unreviewed";
 }
 
 function renderRunModeControls(): void {
@@ -207,12 +231,17 @@ function renderJobs(jobs: JobRecord[]): void {
     return;
   }
 
-  if (!jobs.length) {
-    jobsBody.innerHTML = `<tr><td colspan="7" class="empty-cell">No captured jobs yet.</td></tr>`;
+  const hideIrrelevant = hideIrrelevantInput?.checked ?? true;
+  const visibleJobs = hideIrrelevant
+    ? jobs.filter((job) => !(job.relevanceStatus === "complete" && job.relevanceLabel === "irrelevant"))
+    : jobs;
+
+  if (!visibleJobs.length) {
+    jobsBody.innerHTML = `<tr><td colspan="8" class="empty-cell">No captured jobs yet.</td></tr>`;
     return;
   }
 
-  jobsBody.innerHTML = jobs
+  jobsBody.innerHTML = visibleJobs
     .map(
       (job) => `
         <tr>
@@ -228,6 +257,10 @@ function renderJobs(jobs: JobRecord[]): void {
           </td>
           <td>${job.company || "Unknown"}</td>
           <td>${job.location || "Unknown"}</td>
+          <td>
+            <span class="job-relevance">${humanizeRelevance(job)}</span>
+            ${job.relevanceReason ? `<p class="job-summary">${job.relevanceReason}</p>` : ""}
+          </td>
           <td>${job.matchingSearchProfiles.join(", ")}</td>
           <td>${job.matchingRunLocations.join(", ") || "Any"}</td>
           <td>${new Date(job.lastSeenAt).toLocaleString()}</td>
@@ -353,6 +386,11 @@ runSearchesButton?.addEventListener("click", async () => {
   await loadSummary();
 });
 
+hideIrrelevantInput?.addEventListener("change", () => {
+  localStorage.setItem(HIDE_IRRELEVANT_STORAGE_KEY, hideIrrelevantInput.checked ? "true" : "false");
+  void loadSummary();
+});
+
 retentionModeInput?.addEventListener("change", () => {
   localStorage.setItem(RETENTION_MODE_STORAGE_KEY, retentionModeInput.value);
 });
@@ -426,6 +464,10 @@ if (pageDelayInput) {
 
 if (pageDelayJitterInput) {
   pageDelayJitterInput.value = localStorage.getItem(PAGE_DELAY_JITTER_STORAGE_KEY) ?? "12000";
+}
+
+if (hideIrrelevantInput) {
+  hideIrrelevantInput.checked = (localStorage.getItem(HIDE_IRRELEVANT_STORAGE_KEY) ?? "true") !== "false";
 }
 
 renderRunModeControls();

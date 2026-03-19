@@ -37,6 +37,16 @@ function ensureLinkabilityColumn(database: Database.Database): void {
   }
 }
 
+function ensureRelevanceColumns(database: Database.Database): void {
+  if (!tableExists(database, "job_profile_relevance")) {
+    return;
+  }
+
+  if (!tableHasColumn(database, "job_profile_relevance", "updated_at")) {
+    database.exec("ALTER TABLE job_profile_relevance ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''");
+  }
+}
+
 function ensureSearchProfileColumns(database: Database.Database): void {
   if (!tableHasColumn(database, "search_profiles", "is_active")) {
     database.exec("ALTER TABLE search_profiles ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1");
@@ -206,9 +216,29 @@ export function createDatabase(dbPath: string): Database.Database {
       FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE,
       FOREIGN KEY (run_target_id) REFERENCES run_targets(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS job_profile_relevance (
+      job_id INTEGER NOT NULL,
+      search_profile_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      relevance TEXT,
+      confidence REAL,
+      reason TEXT,
+      signals TEXT NOT NULL DEFAULT '',
+      disqualifiers TEXT NOT NULL DEFAULT '',
+      model TEXT,
+      prompt_version TEXT,
+      classified_at TEXT,
+      source_fingerprint TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY (job_id, search_profile_id),
+      FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE,
+      FOREIGN KEY (search_profile_id) REFERENCES search_profiles(id) ON DELETE CASCADE
+    );
   `);
   ensureSearchProfileColumns(database);
   ensureLinkabilityColumn(database);
+  ensureRelevanceColumns(database);
   ensureRunColumns(database);
   ensureRunTargetColumns(database);
   return database;

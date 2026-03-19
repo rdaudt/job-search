@@ -142,7 +142,13 @@
       <section class="panel">
         <div class="panel-header">
           <h2>3. Review Jobs</h2>
-          <a href="/api/jobs/export.csv">Export CSV</a>
+          <div class="panel-actions">
+            <label class="checkbox-inline">
+              <input id="hide-irrelevant" type="checkbox" checked />
+              Hide irrelevant
+            </label>
+            <a href="/api/jobs/export.csv">Export CSV</a>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
@@ -151,6 +157,7 @@
                 <th>Title</th>
                 <th>Company</th>
                 <th>Location</th>
+                <th>Relevance</th>
                 <th>Searches</th>
                 <th>Run Locations</th>
                 <th>Last Seen</th>
@@ -159,7 +166,7 @@
             </thead>
             <tbody id="jobs-body">
               <tr>
-                <td colspan="7" class="empty-cell">No captured jobs yet.</td>
+                <td colspan="8" class="empty-cell">No captured jobs yet.</td>
               </tr>
             </tbody>
           </table>

@@ -2,6 +2,10 @@ import { z } from "zod";
 
 export const statusValues = ["new", "reviewed", "saved", "ignored"] as const;
 export type JobStatus = (typeof statusValues)[number];
+export const relevanceStatusValues = ["unreviewed", "pending", "complete", "failed"] as const;
+export type RelevanceStatus = (typeof relevanceStatusValues)[number];
+export const relevanceLabelValues = ["relevant", "borderline", "irrelevant"] as const;
+export type RelevanceLabel = (typeof relevanceLabelValues)[number];
 export const runTargetStatusValues = ["pending", "capturing", "completed", "failed"] as const;
 export type RunTargetStatus = (typeof runTargetStatusValues)[number];
 export const runModeValues = ["fixed", "auto"] as const;
@@ -149,8 +153,27 @@ export type JobRecord = {
   firstCapturedAt: string;
   lastSeenAt: string;
   status: JobStatus;
+  relevanceStatus: RelevanceStatus;
+  relevanceLabel: RelevanceLabel | null;
+  relevanceReason: string | null;
   matchingSearchProfiles: string[];
   matchingRunLocations: string[];
+};
+
+export type JobProfileRelevance = {
+  jobId: number;
+  searchProfileId: string;
+  status: Exclude<RelevanceStatus, "unreviewed">;
+  relevance: RelevanceLabel | null;
+  confidence: number | null;
+  reason: string | null;
+  signals: string[];
+  disqualifiers: string[];
+  model: string | null;
+  promptVersion: string | null;
+  classifiedAt: string | null;
+  sourceFingerprint: string;
+  updatedAt: string;
 };
 
 export type PersistedSearchProfile = SearchProfile & {

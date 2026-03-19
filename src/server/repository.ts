@@ -2,10 +2,12 @@ import Database from "better-sqlite3";
 import { stringify } from "csv-stringify/sync";
 import type {
   CapturePayload,
+  JobProfileRelevance,
   JobCsvRow,
   JobRecord,
   JobStatus,
   PersistedSearchProfile,
+  RelevanceLabel,
   RunMode,
   RunRetentionMode,
   RunTarget,
@@ -15,6 +17,8 @@ import type {
 } from "../shared/types.js";
 import type { SourceAdapter } from "../shared/types.js";
 import { listingMatchesCanadianScope, listingMatchesRunLocation } from "../shared/location-utils.js";
+import type { RelevanceResult } from "./relevance/utils.js";
+import { aggregateJobRelevance, buildRelevanceFingerprint } from "./relevance/utils.js";
 
 type JobRow = {
   id: number;
@@ -32,6 +36,15 @@ type JobRow = {
   status: JobStatus;
   matching_search_profiles: string;
   matching_run_locations: string;
+};
+
+type JobRelevanceRow = {
+  job_id: number;
+  search_profile_id: string;
+  status: Exclude<JobProfileRelevance["status"], "unreviewed">;
+  relevance: RelevanceLabel | null;
+  confidence: number | null;
+  reason: string | null;
 };
 
 type RunRow = {
@@ -88,6 +101,30 @@ type RunTargetTemplate = Pick<
   RunTarget,
   "id" | "searchProfileId" | "searchProfileName" | "keywords" | "remote" | "location"
 >;
+
+type PendingRelevanceRow = {
+  job_id: number;
+  search_profile_id: string;
+  search_profile_name: string;
+  keywords: string;
+  remote: number;
+  title: string;
+  company: string;
+  location: string;
+  summary: string | null;
+};
+
+type PendingRelevanceItem = {
+  jobId: number;
+  searchProfileId: string;
+  searchProfileName: string;
+  keywords: string;
+  remote: boolean;
+  title: string;
+  company: string;
+  location: string;
+  summary: string | null;
+};
 type RunConfig = {
   retentionMode: RunRetentionMode;
   runMode: RunMode;
@@ -419,6 +456,193 @@ export class Repository {
     transaction();
   }
 
+  queueRelevanceForRunTarget(
+    runTargetId: string,
+    config: {
+      model: string;
+      promptVersion: string;
+    },
+  ): void {
+    const runTarget = this.getRunTarget(runTargetId);
+    if (!runTarget) {
+      return;
+    }
+
+    const rows = this.database
+      .prepare(`
+        SELECT
+          jobs.id,
+          jobs.title,
+          jobs.company,
+          jobs.location,
+          jobs.summary
+        FROM jobs
+        INNER JOIN job_search_matches ON job_search_matches.job_id = jobs.id
+        WHERE job_search_matches.run_target_id = ?
+      `)
+      .all(runTargetId) as Array<{
+      id: number;
+      title: string;
+      company: string;
+      location: string;
+      summary: string | null;
+    }>;
+
+    const findExisting = this.database.prepare(`
+      SELECT status, source_fingerprint, model, prompt_version
+      FROM job_profile_relevance
+      WHERE job_id = ? AND search_profile_id = ?
+    `);
+    const upsert = this.database.prepare(`
+      INSERT INTO job_profile_relevance (
+        job_id, search_profile_id, status, relevance, confidence, reason, signals, disqualifiers,
+        model, prompt_version, classified_at, source_fingerprint, updated_at
+      )
+      VALUES (
+        @jobId, @searchProfileId, 'pending', NULL, NULL, NULL, '', '',
+        @model, @promptVersion, NULL, @sourceFingerprint, @updatedAt
+      )
+      ON CONFLICT(job_id, search_profile_id) DO UPDATE SET
+        status = excluded.status,
+        relevance = NULL,
+        confidence = NULL,
+        reason = NULL,
+        signals = '',
+        disqualifiers = '',
+        model = excluded.model,
+        prompt_version = excluded.prompt_version,
+        classified_at = NULL,
+        source_fingerprint = excluded.source_fingerprint,
+        updated_at = excluded.updated_at
+    `);
+
+    const now = new Date().toISOString();
+    for (const row of rows) {
+      const sourceFingerprint = buildRelevanceFingerprint({
+        searchProfileName: runTarget.searchProfileName,
+        keywords: runTarget.keywords,
+        remote: runTarget.remote,
+        title: row.title,
+        company: row.company,
+        location: row.location,
+        summary: row.summary
+      });
+      const existing = findExisting.get(row.id, runTarget.searchProfileId) as
+        | {
+            status: Exclude<JobProfileRelevance["status"], "unreviewed">;
+            source_fingerprint: string;
+            model: string | null;
+            prompt_version: string | null;
+          }
+        | undefined;
+
+      if (
+        existing?.status === "complete" &&
+        existing.source_fingerprint === sourceFingerprint &&
+        existing.model === config.model &&
+        existing.prompt_version === config.promptVersion
+      ) {
+        continue;
+      }
+
+      upsert.run({
+        jobId: row.id,
+        searchProfileId: runTarget.searchProfileId,
+        model: config.model,
+        promptVersion: config.promptVersion,
+        sourceFingerprint,
+        updatedAt: now
+      });
+    }
+  }
+
+  getNextPendingRelevanceItem(): PendingRelevanceItem | null {
+    const row = this.database
+      .prepare(`
+        SELECT
+          relevance.job_id,
+          relevance.search_profile_id,
+          search_profiles.name AS search_profile_name,
+          search_profiles.keywords,
+          search_profiles.remote,
+          jobs.title,
+          jobs.company,
+          jobs.location,
+          jobs.summary
+        FROM job_profile_relevance AS relevance
+        INNER JOIN jobs ON jobs.id = relevance.job_id
+        INNER JOIN search_profiles ON search_profiles.id = relevance.search_profile_id
+        WHERE relevance.status = 'pending'
+        ORDER BY relevance.updated_at ASC
+        LIMIT 1
+      `)
+      .get() as PendingRelevanceRow | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      jobId: row.job_id,
+      searchProfileId: row.search_profile_id,
+      searchProfileName: row.search_profile_name,
+      keywords: row.keywords,
+      remote: Boolean(row.remote),
+      title: row.title,
+      company: row.company,
+      location: row.location,
+      summary: row.summary
+    };
+  }
+
+  failRelevance(jobId: number, searchProfileId: string): void {
+    this.database
+      .prepare(`
+        UPDATE job_profile_relevance
+        SET status = 'failed', updated_at = ?
+        WHERE job_id = ? AND search_profile_id = ?
+      `)
+      .run(new Date().toISOString(), jobId, searchProfileId);
+  }
+
+  completeRelevance(
+    jobId: number,
+    searchProfileId: string,
+    model: string,
+    promptVersion: string,
+    result: RelevanceResult,
+  ): void {
+    this.database
+      .prepare(`
+        UPDATE job_profile_relevance
+        SET
+          status = 'complete',
+          relevance = @relevance,
+          confidence = @confidence,
+          reason = @reason,
+          signals = @signals,
+          disqualifiers = @disqualifiers,
+          model = @model,
+          prompt_version = @promptVersion,
+          classified_at = @classifiedAt,
+          updated_at = @updatedAt
+        WHERE job_id = @jobId AND search_profile_id = @searchProfileId
+      `)
+      .run({
+        jobId,
+        searchProfileId,
+        relevance: result.relevance,
+        confidence: result.confidence,
+        reason: result.reason,
+        signals: result.signals.join("||"),
+        disqualifiers: result.disqualifiers.join("||"),
+        model,
+        promptVersion,
+        classifiedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+  }
+
   updateRunTargetState(runTargetId: string, update: RunTargetStateUpdate): void {
     const now = new Date().toISOString();
     const clearStopReason = update.status === "capturing" || update.status === "pending" ? 1 : 0;
@@ -586,7 +810,32 @@ export class Repository {
       `)
       .all() as JobRow[];
 
+    const jobIds = rows.map((row) => row.id);
+    const relevanceRows = jobIds.length
+      ? (this.database
+          .prepare(`
+            SELECT job_id, search_profile_id, status, relevance, confidence, reason
+            FROM job_profile_relevance
+            WHERE job_id IN (${jobIds.map(() => "?").join(",")})
+          `)
+          .all(...jobIds) as JobRelevanceRow[])
+      : [];
+    const relevanceByJobId = new Map<number, JobRelevanceRow[]>();
+    for (const row of relevanceRows) {
+      const collection = relevanceByJobId.get(row.job_id) ?? [];
+      collection.push(row);
+      relevanceByJobId.set(row.job_id, collection);
+    }
+
     return rows.map((row) => ({
+      ...aggregateJobRelevance(
+        (relevanceByJobId.get(row.id) ?? []).map((relevance) => ({
+          status: relevance.status,
+          relevance: relevance.relevance,
+          confidence: relevance.confidence,
+          reason: relevance.reason
+        })),
+      ),
       id: row.id,
       source: row.source,
       sourceJobId: row.source_job_id,
