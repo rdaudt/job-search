@@ -13,6 +13,7 @@ Current scope: the app is restricted to Canadian locations and uses `ca.indeed.c
 - Follows the next results page in the same tab using either a fixed page cap or an auto-stop mode with guardrails and configurable next-page pacing.
 - Lets each run choose whether previously captured jobs are kept cumulatively or deleted before the new run starts.
 - Can optionally qualify captured jobs with OpenAI relevance scoring per search profile.
+- Lets you add app-wide AI guidance, override relevance on individual jobs, and manually re-review jobs with that guidance.
 - Stores jobs in local SQLite with deduplication and status tracking.
 - Exports the current deduplicated job list as CSV.
 
@@ -103,6 +104,7 @@ Notes:
 - The app uses OpenAI's `responses` API. If `OPENAI_MODEL` is omitted, it now defaults to `gpt-5.4`.
 - `OPENAI_REASONING_EFFORT` is optional and accepts `none`, `low`, `medium`, `high`, or `xhigh`. The default is `low`.
 - The server loads `.env` automatically at startup, so `npm start` is enough once the file exists.
+- You can save app-wide AI guidance, override relevance on a specific job with a note, and manually re-review all jobs without losing the raw captured data.
 
 ## Playwright With The Extension
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateJobRelevance, buildRelevanceFingerprint } from "../src/server/relevance/utils.js";
+import { aggregateJobRelevance, buildRelevanceFingerprint, resolveEffectiveJobRelevance } from "../src/server/relevance/utils.js";
 
 describe("relevance utils", () => {
   it("builds a stable fingerprint from normalized inputs", () => {
@@ -7,6 +7,8 @@ describe("relevance utils", () => {
       searchProfileName: "Fitness Coach",
       keywords: "fitness coach",
       remote: false,
+      globalGuidance: "Consider leadership-track roles relevant.",
+      jobOverrideNote: "Kinesiology roles are irrelevant.",
       title: "Fitness Coach ",
       company: " Acme ",
       location: "Vancouver, BC",
@@ -16,6 +18,8 @@ describe("relevance utils", () => {
       searchProfileName: "fitness coach",
       keywords: "fitness   coach",
       remote: false,
+      globalGuidance: " Consider leadership-track roles relevant. ",
+      jobOverrideNote: " kinesiology roles are irrelevant. ",
       title: "fitness coach",
       company: "acme",
       location: "Vancouver,   BC",
@@ -46,6 +50,28 @@ describe("relevance utils", () => {
       relevanceStatus: "complete",
       relevanceLabel: "relevant",
       relevanceReason: "Strong match"
+    });
+  });
+
+  it("prefers a user override over aggregated AI relevance", () => {
+    const aggregated = {
+      relevanceStatus: "complete" as const,
+      relevanceLabel: "irrelevant" as const,
+      relevanceReason: "Wrong domain"
+    };
+
+    expect(
+      resolveEffectiveJobRelevance(aggregated, {
+        relevance: "relevant",
+        note: "Management-track roles are allowed."
+      }),
+    ).toEqual({
+      effectiveRelevanceStatus: "complete",
+      effectiveRelevanceLabel: "relevant",
+      effectiveRelevanceExplanation: "Management-track roles are allowed.",
+      hasUserOverride: true,
+      userOverrideLabel: "relevant",
+      userOverrideNote: "Management-track roles are allowed."
     });
   });
 });

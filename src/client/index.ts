@@ -1,4 +1,4 @@
-import type { AppSummary, JobRecord, JobStatus, PersistedSearchProfile, RunRecord, RunTarget } from "../shared/types.js";
+import type { AiReviewSummary, AppSummary, JobRecord, JobStatus, PersistedSearchProfile, RunRecord, RunTarget } from "../shared/types.js";
 import {
   getDefaultSortDirection,
   getRelevanceExplanation,
@@ -29,6 +29,15 @@ const pageDelayJitterInput = document.querySelector<HTMLSelectElement>("#page-de
 const runLocationsInput = document.querySelector<HTMLTextAreaElement>("#run-locations");
 const runLocationPreview = document.querySelector<HTMLElement>("#run-location-preview");
 const runsContainer = document.querySelector<HTMLElement>("#runs");
+const guidanceInput = document.querySelector<HTMLTextAreaElement>("#relevance-guidance");
+const saveGuidanceButton = document.querySelector<HTMLButtonElement>("#save-guidance");
+const rereviewJobsButton = document.querySelector<HTMLButtonElement>("#rereview-jobs");
+const aiReviewCard = document.querySelector<HTMLElement>("#ai-review-card");
+const aiReviewState = document.querySelector<HTMLElement>("#ai-review-state");
+const aiReviewProgress = document.querySelector<HTMLElement>("#ai-review-progress");
+const aiReviewBarFill = document.querySelector<HTMLElement>("#ai-review-bar-fill");
+const aiReviewCounts = document.querySelector<HTMLElement>("#ai-review-counts");
+const aiReviewUpdated = document.querySelector<HTMLElement>("#ai-review-updated");
 const jobsBody = document.querySelector<HTMLElement>("#jobs-body");
 const relevanceFilterInput = document.querySelector<HTMLSelectElement>("#relevance-filter");
 const toast = document.querySelector<HTMLElement>("#toast");
@@ -48,11 +57,15 @@ const JOB_SORT_FIELD_STORAGE_KEY = "job-search-finder-job-sort-field";
 const JOB_SORT_DIRECTION_STORAGE_KEY = "job-search-finder-job-sort-direction";
 
 let isLoadingSummary = false;
+let pendingSummaryReload = false;
 let previousJobCount = 0;
 let hasLoadedSummary = false;
 let currentRelevanceFilter: RelevanceFilterValue = "all";
 let currentSortField: JobSortField = "relevance";
 let currentSortDirection: SortDirection = "asc";
+let guidanceDraft: string | null = null;
+const overrideDrafts = new Map<number, { relevance: string; note: string }>();
+let previousAiPendingCount = 0;
 
 function showToast(message: string): void {
   if (!toast) {
@@ -134,6 +147,53 @@ function humanizeStopReason(reason: string | null): string {
 
 function formatSeconds(ms: number): string {
   return `${Math.round(ms / 1000)}s`;
+}
+
+function renderGuidance(guidance: string): void {
+  if (guidanceInput) {
+    guidanceInput.value = guidanceDraft ?? guidance;
+  }
+}
+
+function renderAiReviewStatus(summary: AiReviewSummary): void {
+  if (!aiReviewCard || !aiReviewState || !aiReviewProgress || !aiReviewBarFill || !aiReviewCounts || !aiReviewUpdated) {
+    return;
+  }
+
+  aiReviewCard.classList.remove("ai-review-idle", "ai-review-active", "ai-review-complete", "ai-review-warning");
+
+  const total = summary.totalCount;
+  const percent = total > 0 ? Math.round((summary.completeCount / total) * 100) : 0;
+  aiReviewBarFill.style.width = `${percent}%`;
+  aiReviewCounts.textContent = `${summary.pendingCount} pending, ${summary.completeCount} complete, ${summary.failedCount} failed`;
+  aiReviewUpdated.textContent = summary.lastUpdatedAt
+    ? `Last updated: ${new Date(summary.lastUpdatedAt).toLocaleString()}`
+    : "Last updated: never";
+
+  switch (summary.status) {
+    case "in_progress":
+      aiReviewCard.classList.add("ai-review-active");
+      aiReviewState.textContent = "Reviewing jobs";
+      aiReviewProgress.textContent = `${summary.completeCount} of ${summary.totalCount} assessments complete`;
+      break;
+    case "completed":
+      aiReviewCard.classList.add("ai-review-complete");
+      aiReviewState.textContent = "Completed";
+      aiReviewProgress.textContent = `AI review complete for ${summary.totalCount} assessments`;
+      aiReviewBarFill.style.width = total > 0 ? "100%" : "0";
+      break;
+    case "completed_with_failures":
+      aiReviewCard.classList.add("ai-review-warning");
+      aiReviewState.textContent = "Completed with failures";
+      aiReviewProgress.textContent = `${summary.completeCount} of ${summary.totalCount} assessments complete`;
+      break;
+    default:
+      aiReviewCard.classList.add("ai-review-idle");
+      aiReviewState.textContent = "Idle";
+      aiReviewProgress.textContent = "No AI review queued yet.";
+      aiReviewBarFill.style.width = "0";
+      break;
+  }
 }
 
 function renderSortIndicators(): void {
@@ -247,13 +307,18 @@ function renderJobs(jobs: JobRecord[]): void {
   );
 
   if (!visibleJobs.length) {
-    jobsBody.innerHTML = `<tr><td colspan="9" class="empty-cell">No jobs match the current filter.</td></tr>`;
+    jobsBody.innerHTML = `<tr><td colspan="10" class="empty-cell">No jobs match the current filter.</td></tr>`;
     return;
   }
 
   jobsBody.innerHTML = visibleJobs
     .map(
-      (job) => `
+      (job) => {
+        const draft = overrideDrafts.get(job.id);
+        const overrideValue = draft?.relevance ?? job.userOverrideLabel ?? "";
+        const overrideNote = draft?.note ?? job.userOverrideNote ?? "";
+
+        return `
         <tr>
           <td>
             ${
@@ -267,7 +332,7 @@ function renderJobs(jobs: JobRecord[]): void {
           </td>
           <td>${job.company || "Unknown"}</td>
           <td>${job.location || "Unknown"}</td>
-          <td><span class="job-relevance">${getRelevanceFlagStatus(job)}</span></td>
+          <td><span class="job-relevance ${job.hasUserOverride ? "user-override" : ""}">${getRelevanceFlagStatus(job)}</span></td>
           <td>
             <span class="job-summary">${getRelevanceExplanation(job)}</span>
           </td>
@@ -279,8 +344,24 @@ function renderJobs(jobs: JobRecord[]): void {
               ${statusOptions(job.status)}
             </select>
           </td>
+          <td>
+            <div class="override-controls">
+              <select class="override-select" data-job-id="${job.id}">
+                <option value="">No override</option>
+                <option value="relevant" ${overrideValue === "relevant" ? "selected" : ""}>Relevant</option>
+                <option value="borderline" ${overrideValue === "borderline" ? "selected" : ""}>Borderline</option>
+                <option value="irrelevant" ${overrideValue === "irrelevant" ? "selected" : ""}>Irrelevant</option>
+              </select>
+              <textarea class="override-note" data-job-id="${job.id}" rows="3" placeholder="Explain why this job should be treated differently.">${overrideNote}</textarea>
+              <div class="override-actions">
+                <button class="save-override-button" type="button" data-job-id="${job.id}">Save</button>
+                <button class="clear-override-button" type="button" data-job-id="${job.id}" ${job.hasUserOverride || Boolean(draft?.relevance || draft?.note) ? "" : "disabled"}>Clear</button>
+              </div>
+            </div>
+          </td>
         </tr>
-      `,
+      `;
+      },
     )
     .join("");
 }
@@ -305,8 +386,93 @@ function bindStatusEditors(): void {
   });
 }
 
+function bindOverrideEditors(): void {
+  document.querySelectorAll<HTMLSelectElement>(".override-select").forEach((select) => {
+    select.addEventListener("change", () => {
+      const jobId = Number(select.dataset.jobId);
+      const current = overrideDrafts.get(jobId) ?? {
+        relevance: "",
+        note: document.querySelector<HTMLTextAreaElement>(`.override-note[data-job-id="${jobId}"]`)?.value ?? ""
+      };
+      overrideDrafts.set(jobId, {
+        ...current,
+        relevance: select.value
+      });
+    });
+  });
+
+  document.querySelectorAll<HTMLTextAreaElement>(".override-note").forEach((textarea) => {
+    textarea.addEventListener("input", () => {
+      const jobId = Number(textarea.dataset.jobId);
+      const current = overrideDrafts.get(jobId) ?? {
+        relevance: document.querySelector<HTMLSelectElement>(`.override-select[data-job-id="${jobId}"]`)?.value ?? "",
+        note: ""
+      };
+      overrideDrafts.set(jobId, {
+        ...current,
+        note: textarea.value
+      });
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>(".save-override-button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const jobId = Number(button.dataset.jobId);
+      const select = document.querySelector<HTMLSelectElement>(`.override-select[data-job-id="${jobId}"]`);
+      const note = document.querySelector<HTMLTextAreaElement>(`.override-note[data-job-id="${jobId}"]`);
+      const relevance = select?.value ?? "";
+      const message = note?.value.trim() ?? "";
+
+      if (!relevance) {
+        showToast("Choose a relevance override before saving.");
+        return;
+      }
+      if (!message) {
+        showToast("Add a note explaining the override.");
+        return;
+      }
+
+      const response = await fetch(`/api/jobs/${jobId}/relevance-override`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ relevance, note: message })
+      });
+
+      if (!response.ok) {
+        const error = (await response.json().catch(() => ({ error: "Could not save override." }))) as { error?: string };
+        showToast(error.error ?? "Could not save override.");
+        return;
+      }
+
+      overrideDrafts.delete(jobId);
+      showToast("Relevance override saved.");
+      await loadSummary();
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>(".clear-override-button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const jobId = Number(button.dataset.jobId);
+      const response = await fetch(`/api/jobs/${jobId}/relevance-override`, {
+        method: "DELETE"
+      });
+
+      if (!response.ok) {
+        const error = (await response.json().catch(() => ({ error: "Could not clear override." }))) as { error?: string };
+        showToast(error.error ?? "Could not clear override.");
+        return;
+      }
+
+      overrideDrafts.delete(jobId);
+      showToast("Relevance override cleared.");
+      await loadSummary();
+    });
+  });
+}
+
 async function loadSummary(): Promise<void> {
   if (isLoadingSummary) {
+    pendingSummaryReload = true;
     return;
   }
 
@@ -314,21 +480,37 @@ async function loadSummary(): Promise<void> {
   try {
     const response = await fetch("/api/summary");
     const summary = (await response.json()) as AppSummary;
+    renderGuidance(summary.settings.relevanceGuidance);
+    renderAiReviewStatus(summary.aiReview);
     renderSearches(summary.searches);
     renderRuns(summary.runs, summary.latestRunTargets);
     renderJobs(summary.jobs);
     renderSortIndicators();
     bindStatusEditors();
+    bindOverrideEditors();
 
     if (hasLoadedSummary && summary.jobs.length > previousJobCount) {
       const captured = summary.jobs.length - previousJobCount;
       showToast(`Captured ${captured} new job${captured === 1 ? "" : "s"}.`);
     }
 
+    if (hasLoadedSummary && previousAiPendingCount > 0 && summary.aiReview.pendingCount === 0) {
+      showToast(
+        summary.aiReview.failedCount > 0
+          ? "AI review completed with failures."
+          : "AI review completed."
+      );
+    }
+
     previousJobCount = summary.jobs.length;
+    previousAiPendingCount = summary.aiReview.pendingCount;
     hasLoadedSummary = true;
   } finally {
     isLoadingSummary = false;
+    if (pendingSummaryReload) {
+      pendingSummaryReload = false;
+      void loadSummary();
+    }
   }
 }
 
@@ -397,6 +579,39 @@ runSearchesButton?.addEventListener("click", async () => {
   await loadSummary();
 });
 
+saveGuidanceButton?.addEventListener("click", async () => {
+  const guidance = guidanceInput?.value ?? "";
+  const response = await fetch("/api/settings/relevance-guidance", {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ guidance })
+  });
+
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({ error: "Could not save guidance." }))) as { error?: string };
+    showToast(error.error ?? "Could not save guidance.");
+    return;
+  }
+
+  guidanceDraft = null;
+  showToast("AI guidance saved.");
+  await loadSummary();
+});
+
+rereviewJobsButton?.addEventListener("click", async () => {
+  const response = await fetch("/api/relevance/rereview", { method: "POST" });
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({ error: "Could not queue re-review." }))) as { error?: string };
+    showToast(error.error ?? "Could not queue re-review.");
+    return;
+  }
+
+  showToast("Queued AI re-review for all jobs.");
+  await loadSummary();
+});
+
 relevanceFilterInput?.addEventListener("change", () => {
   const nextFilter = relevanceFilterValues.includes((relevanceFilterInput.value as RelevanceFilterValue))
     ? (relevanceFilterInput.value as RelevanceFilterValue)
@@ -462,6 +677,10 @@ pageDelayInput?.addEventListener("change", () => {
 
 pageDelayJitterInput?.addEventListener("change", () => {
   localStorage.setItem(PAGE_DELAY_JITTER_STORAGE_KEY, pageDelayJitterInput.value);
+});
+
+guidanceInput?.addEventListener("input", () => {
+  guidanceDraft = guidanceInput.value;
 });
 
 if (runLocationsInput) {

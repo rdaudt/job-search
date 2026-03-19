@@ -7,6 +7,8 @@ export type RelevanceJobInput = {
   searchProfileName: string;
   keywords: string;
   remote: boolean;
+  globalGuidance: string;
+  jobOverrideNote: string | null;
   title: string;
   company: string;
   location: string;
@@ -27,6 +29,15 @@ export type AggregatedJobRelevance = {
   relevanceReason: string | null;
 };
 
+export type EffectiveJobRelevance = {
+  effectiveRelevanceStatus: RelevanceStatus;
+  effectiveRelevanceLabel: RelevanceLabel | null;
+  effectiveRelevanceExplanation: string | null;
+  hasUserOverride: boolean;
+  userOverrideLabel: RelevanceLabel | null;
+  userOverrideNote: string | null;
+};
+
 type StoredRelevance = {
   status: Exclude<RelevanceStatus, "unreviewed">;
   relevance: RelevanceLabel | null;
@@ -43,6 +54,8 @@ export function buildRelevanceFingerprint(input: RelevanceJobInput): string {
     searchProfileName: normalizeText(input.searchProfileName),
     keywords: normalizeText(input.keywords),
     remote: input.remote ? "true" : "false",
+    globalGuidance: normalizeText(input.globalGuidance),
+    jobOverrideNote: normalizeText(input.jobOverrideNote),
     title: normalizeText(input.title),
     company: normalizeText(input.company),
     location: normalizeText(input.location),
@@ -106,5 +119,35 @@ export function aggregateJobRelevance(rows: StoredRelevance[]): AggregatedJobRel
     relevanceStatus: "failed",
     relevanceLabel: null,
     relevanceReason: null
+  };
+}
+
+export function resolveEffectiveJobRelevance(
+  aggregated: AggregatedJobRelevance,
+  override:
+    | {
+        relevance: RelevanceLabel;
+        note: string;
+      }
+    | undefined,
+): EffectiveJobRelevance {
+  if (override) {
+    return {
+      effectiveRelevanceStatus: "complete",
+      effectiveRelevanceLabel: override.relevance,
+      effectiveRelevanceExplanation: override.note,
+      hasUserOverride: true,
+      userOverrideLabel: override.relevance,
+      userOverrideNote: override.note
+    };
+  }
+
+  return {
+    effectiveRelevanceStatus: aggregated.relevanceStatus,
+    effectiveRelevanceLabel: aggregated.relevanceLabel,
+    effectiveRelevanceExplanation: aggregated.relevanceReason,
+    hasUserOverride: false,
+    userOverrideLabel: null,
+    userOverrideNote: null
   };
 }

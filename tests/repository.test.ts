@@ -373,6 +373,8 @@ describe("Repository", () => {
 
     const pending = repository.getNextPendingRelevanceItem();
     expect(pending?.jobId).toBe(jobs[0].id);
+    expect(pending?.globalGuidance).toBe("");
+    expect(pending?.jobOverrideNote).toBeNull();
 
     repository.completeRelevance(jobs[0].id, "fitness", "gpt-5.4", "relevance-v1", {
       relevance: "relevant",
@@ -392,6 +394,176 @@ describe("Repository", () => {
     expect(jobs[0].relevanceLabel).toBe("relevant");
     expect(jobs[0].relevanceReason).toBe("Strong title match");
     expect(repository.getNextPendingRelevanceItem()).toBeNull();
+  });
+
+  it("applies user overrides as the effective relevance and requeues jobs when guidance changes", () => {
+    const repository = createRepository();
+    repository.replaceSearchProfiles([
+      {
+        id: "fitness",
+        name: "Fitness",
+        keywords: "fitness coach",
+        location: "Vancouver, BC",
+        remote: false
+      }
+    ]);
+
+    const searches = repository.listSearchProfiles();
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
+      runMode: "fixed",
+      maxPages: 1,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
+
+    repository.ingestCapture({
+      source: "indeed",
+      runTargetId: targets[0].id,
+      pageUrl: "https://ca.indeed.com/jobs?q=fitness+coach&l=Vancouver%2C+BC",
+      listings: [
+        {
+          sourceJobId: "jk-fit",
+          url: "https://ca.indeed.com/viewjob?jk=jk-fit",
+          title: "Kinesiologist",
+          company: "Acme",
+          location: "Vancouver, BC",
+          summary: "Help members train"
+        }
+      ]
+    });
+
+    repository.queueRelevanceForRunTarget(targets[0].id, {
+      model: "gpt-5.4",
+      promptVersion: "relevance-v1"
+    });
+
+    let job = repository.listJobs()[0];
+    repository.completeRelevance(job.id, "fitness", "gpt-5.4", "relevance-v1", {
+      relevance: "irrelevant",
+      confidence: 0.86,
+      reason: "Not a coach role",
+      signals: ["kinesiology"],
+      disqualifiers: ["coach missing"]
+    });
+
+    repository.setJobRelevanceOverride(job.id, "relevant", "Kinesiology jobs shall be considered relevant.");
+    job = repository.listJobs()[0];
+    expect(job.hasUserOverride).toBe(true);
+    expect(job.userOverrideLabel).toBe("relevant");
+    expect(job.effectiveRelevanceLabel).toBe("relevant");
+    expect(job.effectiveRelevanceExplanation).toBe("Kinesiology jobs shall be considered relevant.");
+
+    repository.setRelevanceGuidance("Management-track jobs in my field are relevant.");
+    repository.queueRelevanceForAllJobs({
+      model: "gpt-5.4",
+      promptVersion: "relevance-v1"
+    });
+
+    const pending = repository.getNextPendingRelevanceItem();
+    expect(pending?.jobId).toBe(job.id);
+    expect(pending?.globalGuidance).toBe("Management-track jobs in my field are relevant.");
+    expect(pending?.jobOverrideNote).toBe("Kinesiology jobs shall be considered relevant.");
+
+    repository.completeRelevance(job.id, "fitness", "gpt-5.4", "relevance-v1", {
+      relevance: "irrelevant",
+      confidence: 0.9,
+      reason: "Still outside the target coaching roles",
+      signals: ["kinesiology"],
+      disqualifiers: ["coach missing"]
+    });
+
+    repository.clearJobRelevanceOverride(job.id);
+    job = repository.listJobs()[0];
+    expect(job.hasUserOverride).toBe(false);
+    expect(job.effectiveRelevanceLabel).toBe("irrelevant");
+    expect(job.effectiveRelevanceExplanation).toBe("Still outside the target coaching roles");
+  });
+
+  it("reports aggregate AI review status", () => {
+    const repository = createRepository();
+    repository.replaceSearchProfiles([
+      {
+        id: "fitness",
+        name: "Fitness",
+        keywords: "fitness coach",
+        location: "Vancouver, BC",
+        remote: false
+      }
+    ]);
+
+    expect(repository.getAiReviewSummary()).toEqual({
+      pendingCount: 0,
+      completeCount: 0,
+      failedCount: 0,
+      totalCount: 0,
+      status: "idle",
+      lastUpdatedAt: null
+    });
+
+    const searches = repository.listSearchProfiles();
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
+      runMode: "fixed",
+      maxPages: 1,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
+
+    repository.ingestCapture({
+      source: "indeed",
+      runTargetId: targets[0].id,
+      pageUrl: "https://ca.indeed.com/jobs?q=fitness+coach&l=Vancouver%2C+BC",
+      listings: [
+        {
+          sourceJobId: "jk-fit",
+          url: "https://ca.indeed.com/viewjob?jk=jk-fit",
+          title: "Fitness Coach",
+          company: "Acme",
+          location: "Vancouver, BC"
+        }
+      ]
+    });
+
+    repository.queueRelevanceForRunTarget(targets[0].id, {
+      model: "gpt-5.4",
+      promptVersion: "relevance-v1"
+    });
+
+    let summary = repository.getAiReviewSummary();
+    expect(summary.pendingCount).toBe(1);
+    expect(summary.status).toBe("in_progress");
+
+    const job = repository.listJobs()[0];
+    repository.completeRelevance(job.id, "fitness", "gpt-5.4", "relevance-v1", {
+      relevance: "relevant",
+      confidence: 0.91,
+      reason: "Strong match",
+      signals: ["fitness"],
+      disqualifiers: []
+    });
+
+    summary = repository.getAiReviewSummary();
+    expect(summary.completeCount).toBe(1);
+    expect(summary.status).toBe("completed");
+
+    repository.queueRelevanceForAllJobs({
+      model: "gpt-5.4",
+      promptVersion: "relevance-v1"
+    });
+    repository.failRelevance(job.id, "fitness");
+
+    summary = repository.getAiReviewSummary();
+    expect(summary.failedCount).toBe(1);
+    expect(summary.status).toBe("completed_with_failures");
   });
 
   it("keeps captured jobs across search imports until a reset run is requested", () => {

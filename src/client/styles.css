@@ -257,6 +257,74 @@ th {
   gap: 16px;
 }
 
+.guidance-panel {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.ai-review-card {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.ai-review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.ai-review-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.ai-review-state {
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.ai-review-progress {
+  margin: 10px 0 12px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ai-review-bar {
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(31, 42, 31, 0.08);
+}
+
+.ai-review-bar-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+.ai-review-active .ai-review-bar-fill {
+  background: linear-gradient(90deg, var(--accent), #74c69d);
+}
+
+.ai-review-complete .ai-review-bar-fill {
+  background: #2d6a4f;
+}
+
+.ai-review-warning .ai-review-bar-fill {
+  background: #c2872c;
+}
+
 .review-filter {
   display: inline-flex;
   align-items: center;
@@ -302,6 +370,42 @@ th {
 
 .job-relevance {
   font-weight: 700;
+}
+
+.job-relevance.user-override::after {
+  content: "User override";
+  display: block;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.override-controls {
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.override-controls select,
+.override-controls button {
+  width: 100%;
+}
+
+.override-controls textarea {
+  min-height: 84px;
+  border-radius: 14px;
+}
+
+.override-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.override-actions button {
+  flex: 1;
 }
 
 .status-select {

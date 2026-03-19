@@ -27,6 +27,12 @@ function buildJob(overrides: Partial<JobRecord>): JobRecord {
     relevanceStatus: "complete",
     relevanceLabel: "relevant",
     relevanceReason: "Strong title match",
+    effectiveRelevanceStatus: "complete",
+    effectiveRelevanceLabel: "relevant",
+    effectiveRelevanceExplanation: "Strong title match",
+    hasUserOverride: false,
+    userOverrideLabel: null,
+    userOverrideNote: null,
     matchingSearchProfiles: ["Fitness"],
     matchingRunLocations: ["Vancouver, BC"],
     ...overrides
@@ -37,19 +43,40 @@ describe("job table helpers", () => {
   it("derives relevance labels and explanation placeholders", () => {
     expect(
       getRelevanceFlagStatus(
-        buildJob({ relevanceStatus: "pending", relevanceLabel: null, relevanceReason: null })
+        buildJob({
+          relevanceStatus: "pending",
+          relevanceLabel: null,
+          relevanceReason: null,
+          effectiveRelevanceStatus: "pending",
+          effectiveRelevanceLabel: null,
+          effectiveRelevanceExplanation: null
+        })
       )
     ).toBe("Pending AI review");
 
     expect(
       getRelevanceExplanation(
-        buildJob({ relevanceStatus: "failed", relevanceLabel: null, relevanceReason: null })
+        buildJob({
+          relevanceStatus: "failed",
+          relevanceLabel: null,
+          relevanceReason: null,
+          effectiveRelevanceStatus: "failed",
+          effectiveRelevanceLabel: null,
+          effectiveRelevanceExplanation: null
+        })
       )
     ).toBe("AI classification failed");
 
     expect(
       getRelevanceExplanation(
-        buildJob({ relevanceStatus: "unreviewed", relevanceLabel: null, relevanceReason: null })
+        buildJob({
+          relevanceStatus: "unreviewed",
+          relevanceLabel: null,
+          relevanceReason: null,
+          effectiveRelevanceStatus: "unreviewed",
+          effectiveRelevanceLabel: null,
+          effectiveRelevanceExplanation: null
+        })
       )
     ).toBe("Not sent for AI review");
   });
@@ -58,7 +85,10 @@ describe("job table helpers", () => {
     const irrelevant = buildJob({
       relevanceStatus: "complete",
       relevanceLabel: "irrelevant",
-      relevanceReason: "Wrong domain"
+      relevanceReason: "Wrong domain",
+      effectiveRelevanceStatus: "complete",
+      effectiveRelevanceLabel: "irrelevant",
+      effectiveRelevanceExplanation: "Wrong domain"
     });
 
     expect(getRelevanceFilterValue(irrelevant)).toBe("irrelevant");
@@ -73,7 +103,9 @@ describe("job table helpers", () => {
         title: "Older Relevant",
         lastSeenAt: "2026-03-18T10:00:00.000Z",
         relevanceStatus: "complete",
-        relevanceLabel: "relevant"
+        relevanceLabel: "relevant",
+        effectiveRelevanceStatus: "complete",
+        effectiveRelevanceLabel: "relevant"
       }),
       buildJob({
         id: 2,
@@ -81,14 +113,19 @@ describe("job table helpers", () => {
         lastSeenAt: "2026-03-19T10:00:00.000Z",
         relevanceStatus: "pending",
         relevanceLabel: null,
-        relevanceReason: null
+        relevanceReason: null,
+        effectiveRelevanceStatus: "pending",
+        effectiveRelevanceLabel: null,
+        effectiveRelevanceExplanation: null
       }),
       buildJob({
         id: 3,
         title: "Newer Relevant",
         lastSeenAt: "2026-03-19T11:00:00.000Z",
         relevanceStatus: "complete",
-        relevanceLabel: "relevant"
+        relevanceLabel: "relevant",
+        effectiveRelevanceStatus: "complete",
+        effectiveRelevanceLabel: "relevant"
       })
     ];
 
@@ -102,5 +139,19 @@ describe("job table helpers", () => {
   it("uses descending as the default direction for last seen only", () => {
     expect(getDefaultSortDirection("lastSeen")).toBe("desc");
     expect(getDefaultSortDirection("title")).toBe("asc");
+  });
+
+  it("shows override-derived relevance and explanation when present", () => {
+    const overridden = buildJob({
+      effectiveRelevanceStatus: "complete",
+      effectiveRelevanceLabel: "relevant",
+      effectiveRelevanceExplanation: "Leadership-track roles are in scope.",
+      hasUserOverride: true,
+      userOverrideLabel: "relevant",
+      userOverrideNote: "Leadership-track roles are in scope."
+    });
+
+    expect(getRelevanceFlagStatus(overridden)).toBe("Relevant");
+    expect(getRelevanceExplanation(overridden)).toBe("Leadership-track roles are in scope.");
   });
 });

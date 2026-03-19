@@ -48,70 +48,70 @@ function compareText(a: string, b: string): number {
 }
 
 function getRelevanceKey(job: JobRecord): keyof typeof relevanceRank {
-  if (job.relevanceStatus === "pending") {
+  if (job.effectiveRelevanceStatus === "pending") {
     return "pending";
   }
-  if (job.relevanceStatus === "failed") {
+  if (job.effectiveRelevanceStatus === "failed") {
     return "failed";
   }
-  if (job.relevanceStatus === "unreviewed") {
+  if (job.effectiveRelevanceStatus === "unreviewed") {
     return "unreviewed";
   }
-  if (job.relevanceLabel === "relevant") {
+  if (job.effectiveRelevanceLabel === "relevant") {
     return "relevant";
   }
-  if (job.relevanceLabel === "borderline") {
+  if (job.effectiveRelevanceLabel === "borderline") {
     return "borderline";
   }
   return "irrelevant";
 }
 
 export function getRelevanceFlagStatus(job: JobRecord): string {
-  if (job.relevanceStatus === "pending") {
+  if (job.effectiveRelevanceStatus === "pending") {
     return "Pending AI review";
   }
-  if (job.relevanceStatus === "failed") {
+  if (job.effectiveRelevanceStatus === "failed") {
     return "AI failed";
   }
-  if (job.relevanceStatus === "unreviewed") {
+  if (job.effectiveRelevanceStatus === "unreviewed") {
     return "Unreviewed";
   }
-  if (job.relevanceLabel === "relevant") {
+  if (job.effectiveRelevanceLabel === "relevant") {
     return "Relevant";
   }
-  if (job.relevanceLabel === "borderline") {
+  if (job.effectiveRelevanceLabel === "borderline") {
     return "Borderline";
   }
   return "Irrelevant";
 }
 
 export function getRelevanceExplanation(job: JobRecord): string {
-  if (job.relevanceReason?.trim()) {
-    return job.relevanceReason.trim();
+  if (job.effectiveRelevanceExplanation?.trim()) {
+    return job.effectiveRelevanceExplanation.trim();
   }
-  if (job.relevanceStatus === "pending") {
+  if (job.effectiveRelevanceStatus === "pending") {
     return "Pending AI review";
   }
-  if (job.relevanceStatus === "failed") {
+  if (job.effectiveRelevanceStatus === "failed") {
     return "AI classification failed";
   }
-  if (job.relevanceStatus === "unreviewed") {
+  if (job.effectiveRelevanceStatus === "unreviewed") {
     return "Not sent for AI review";
   }
   return "No explanation returned";
 }
 
 export function getRelevanceFilterValue(job: JobRecord): RelevanceFilterValue {
-  if (job.relevanceStatus === "pending") {
+  if (job.effectiveRelevanceStatus === "pending") {
     return "pending";
   }
-  if (job.relevanceStatus === "failed") {
+  if (job.effectiveRelevanceStatus === "failed") {
     return "failed";
   }
-  if (job.relevanceStatus === "unreviewed") {
+  if (job.effectiveRelevanceStatus === "unreviewed") {
     return "unreviewed";
   }
-  return job.relevanceLabel ?? "unreviewed";
+  return job.effectiveRelevanceLabel ?? "unreviewed";
 }
 
 export function matchesRelevanceFilter(job: JobRecord, filter: RelevanceFilterValue): boolean {

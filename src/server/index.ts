@@ -9,6 +9,8 @@ import {
   DEFAULT_AUTO_ZERO_NEW_JOBS_THRESHOLD,
   DEFAULT_EMERGENCY_MAX_PAGES,
   DEFAULT_FIXED_MAX_PAGES,
+  guidanceUpdateSchema,
+  jobRelevanceOverrideSchema,
   runRequestSchema,
   runTargetStateUpdateSchema,
   statusValues,
@@ -65,6 +67,8 @@ app.use(express.static(publicDir));
 
 function getSummary(): AppSummary {
   return {
+    settings: repository.getSettings(),
+    aiReview: repository.getAiReviewSummary(),
     searches: repository.listSearchProfiles(),
     jobs: repository.listJobs(),
     runs: repository.listRuns(),
@@ -125,6 +129,22 @@ function normalizeRunConfig(rawBody: unknown): {
 
 app.get("/api/summary", (_req, res) => {
   res.json(getSummary());
+});
+
+app.get("/api/settings", (_req, res) => {
+  res.json(repository.getSettings());
+});
+
+app.patch("/api/settings/relevance-guidance", (req, res) => {
+  try {
+    const payload = guidanceUpdateSchema.parse(req.body);
+    const settings = repository.setRelevanceGuidance(payload.guidance.trim());
+    res.json(settings);
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : "Could not update relevance guidance."
+    });
+  }
 });
 
 app.post("/api/searches/import", upload.single("file"), (req, res) => {
@@ -239,6 +259,48 @@ app.patch("/api/jobs/:id/status", (req, res) => {
   }
 
   repository.updateJobStatus(jobId, status);
+  res.json({ ok: true });
+});
+
+app.patch("/api/jobs/:id/relevance-override", (req, res) => {
+  try {
+    const jobId = Number(req.params.id);
+    if (!Number.isInteger(jobId)) {
+      res.status(400).json({ error: "Provide a valid job id." });
+      return;
+    }
+
+    const payload = jobRelevanceOverrideSchema.parse(req.body);
+    repository.setJobRelevanceOverride(jobId, payload.relevance, payload.note);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : "Could not update job relevance override."
+    });
+  }
+});
+
+app.delete("/api/jobs/:id/relevance-override", (req, res) => {
+  const jobId = Number(req.params.id);
+  if (!Number.isInteger(jobId)) {
+    res.status(400).json({ error: "Provide a valid job id." });
+    return;
+  }
+
+  repository.clearJobRelevanceOverride(jobId);
+  res.json({ ok: true });
+});
+
+app.post("/api/relevance/rereview", (_req, res) => {
+  if (!relevanceClassifier) {
+    res.status(400).json({ error: "OpenAI relevance worker is not enabled." });
+    return;
+  }
+
+  repository.queueRelevanceForAllJobs({
+    model: relevanceClassifier.model,
+    promptVersion: relevanceClassifier.promptVersion
+  });
   res.json({ ok: true });
 });
 

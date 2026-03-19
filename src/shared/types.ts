@@ -156,9 +156,50 @@ export type JobRecord = {
   relevanceStatus: RelevanceStatus;
   relevanceLabel: RelevanceLabel | null;
   relevanceReason: string | null;
+  effectiveRelevanceStatus: RelevanceStatus;
+  effectiveRelevanceLabel: RelevanceLabel | null;
+  effectiveRelevanceExplanation: string | null;
+  hasUserOverride: boolean;
+  userOverrideLabel: RelevanceLabel | null;
+  userOverrideNote: string | null;
   matchingSearchProfiles: string[];
   matchingRunLocations: string[];
 };
+
+export type JobRelevanceOverride = {
+  jobId: number;
+  relevance: RelevanceLabel;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AppSettings = {
+  relevanceGuidance: string;
+  updatedAt: string | null;
+};
+
+export type AiReviewSummary = {
+  pendingCount: number;
+  completeCount: number;
+  failedCount: number;
+  totalCount: number;
+  status: "idle" | "in_progress" | "completed" | "completed_with_failures";
+  lastUpdatedAt: string | null;
+};
+
+export const guidanceUpdateSchema = z.object({
+  guidance: z.string().max(4000).default("")
+});
+
+export type GuidanceUpdate = z.infer<typeof guidanceUpdateSchema>;
+
+export const jobRelevanceOverrideSchema = z.object({
+  relevance: z.enum(relevanceLabelValues),
+  note: z.string().trim().min(1).max(1000)
+});
+
+export type JobRelevanceOverrideInput = z.infer<typeof jobRelevanceOverrideSchema>;
 
 export type JobProfileRelevance = {
   jobId: number;
@@ -216,6 +257,8 @@ export type SourceAdapter = {
 };
 
 export type AppSummary = {
+  settings: AppSettings;
+  aiReview: AiReviewSummary;
   searches: PersistedSearchProfile[];
   jobs: JobRecord[];
   runs: RunRecord[];

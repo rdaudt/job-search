@@ -47,6 +47,25 @@ function ensureRelevanceColumns(database: Database.Database): void {
   }
 }
 
+function ensureSettingsAndOverrideTables(database: Database.Database): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS job_relevance_overrides (
+      job_id INTEGER PRIMARY KEY,
+      relevance TEXT NOT NULL,
+      note TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+    );
+  `);
+}
+
 function ensureSearchProfileColumns(database: Database.Database): void {
   if (!tableHasColumn(database, "search_profiles", "is_active")) {
     database.exec("ALTER TABLE search_profiles ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1");
@@ -241,5 +260,6 @@ export function createDatabase(dbPath: string): Database.Database {
   ensureRelevanceColumns(database);
   ensureRunColumns(database);
   ensureRunTargetColumns(database);
+  ensureSettingsAndOverrideTables(database);
   return database;
 }

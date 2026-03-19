@@ -26,6 +26,8 @@ export function startRelevanceWorker(repository: Repository, classifier: OpenAIR
         searchProfileName: pendingItem.searchProfileName,
         keywords: pendingItem.keywords,
         remote: pendingItem.remote,
+        globalGuidance: pendingItem.globalGuidance,
+        jobOverrideNote: pendingItem.jobOverrideNote,
         title: pendingItem.title,
         company: pendingItem.company,
         location: pendingItem.location,

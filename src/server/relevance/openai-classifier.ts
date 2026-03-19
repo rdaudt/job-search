@@ -124,7 +124,7 @@ export class OpenAIRelevanceClassifier {
               {
                 type: "input_text",
                 text:
-                  "You classify whether a captured job listing is relevant to a specific user search profile. Judge from the perspective of whether the user would want to review the job. Prefer precision over recall for obviously unrelated jobs. Use the title heavily and the summary as support. Return only the requested JSON schema."
+                  "You classify whether a captured job listing is relevant to a specific user search profile. Judge from the perspective of whether the user would want to review the job. Prefer precision over recall for obviously unrelated jobs. Use the title heavily and the summary as support. Respect any global user guidance, and if a job-specific override note is present, treat it as strong context for that specific job. Return only the requested JSON schema."
               }
             ]
           },
@@ -137,6 +137,8 @@ export class OpenAIRelevanceClassifier {
                   searchProfileName: input.searchProfileName,
                   keywords: input.keywords,
                   remote: input.remote,
+                  globalGuidance: input.globalGuidance,
+                  jobOverrideNote: input.jobOverrideNote,
                   job: {
                     title: input.title,
                     company: input.company,

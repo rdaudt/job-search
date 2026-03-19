@@ -158,6 +158,33 @@
             <a href="/api/jobs/export.csv">Export CSV</a>
           </div>
         </div>
+        <div class="stack stack-vertical guidance-panel">
+          <label class="field-label" for="relevance-guidance">AI guidance</label>
+          <textarea
+            id="relevance-guidance"
+            rows="4"
+            placeholder="Example: Management-track jobs in my field should still be considered relevant."
+          ></textarea>
+          <div class="panel-actions">
+            <button id="save-guidance" type="button">Save guidance</button>
+            <button id="rereview-jobs" type="button">Re-review all jobs</button>
+          </div>
+          <p class="helper">
+            Guidance is app-wide and will be included in future AI relevance reviews and new runs.
+          </p>
+        </div>
+        <div id="ai-review-card" class="ai-review-card ai-review-idle">
+          <div class="ai-review-header">
+            <h3>AI Review Status</h3>
+            <span id="ai-review-state" class="ai-review-state">Idle</span>
+          </div>
+          <p id="ai-review-progress" class="ai-review-progress">No AI review queued yet.</p>
+          <div class="ai-review-bar" aria-hidden="true">
+            <span id="ai-review-bar-fill" class="ai-review-bar-fill"></span>
+          </div>
+          <p id="ai-review-counts" class="helper">0 pending, 0 complete, 0 failed</p>
+          <p id="ai-review-updated" class="helper">Last updated: never</p>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -171,11 +198,12 @@
                 <th><button class="sort-button" type="button" data-sort-field="runLocations">Run Locations</button></th>
                 <th><button class="sort-button" type="button" data-sort-field="lastSeen">Last Seen</button></th>
                 <th><button class="sort-button" type="button" data-sort-field="status">Status</button></th>
+                <th>Override</th>
               </tr>
             </thead>
             <tbody id="jobs-body">
               <tr>
-                <td colspan="9" class="empty-cell">No captured jobs yet.</td>
+                <td colspan="10" class="empty-cell">No captured jobs yet.</td>
               </tr>
             </tbody>
           </table>

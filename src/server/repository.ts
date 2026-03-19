@@ -1,6 +1,8 @@
 import Database from "better-sqlite3";
 import { stringify } from "csv-stringify/sync";
 import type {
+  AiReviewSummary,
+  AppSettings,
   CapturePayload,
   JobProfileRelevance,
   JobCsvRow,
@@ -18,7 +20,7 @@ import type {
 import type { SourceAdapter } from "../shared/types.js";
 import { listingMatchesCanadianScope, listingMatchesRunLocation } from "../shared/location-utils.js";
 import type { RelevanceResult } from "./relevance/utils.js";
-import { aggregateJobRelevance, buildRelevanceFingerprint } from "./relevance/utils.js";
+import { aggregateJobRelevance, buildRelevanceFingerprint, resolveEffectiveJobRelevance } from "./relevance/utils.js";
 
 type JobRow = {
   id: number;
@@ -36,6 +38,14 @@ type JobRow = {
   status: JobStatus;
   matching_search_profiles: string;
   matching_run_locations: string;
+};
+
+type JobOverrideRow = {
+  job_id: number;
+  relevance: RelevanceLabel;
+  note: string;
+  created_at: string;
+  updated_at: string;
 };
 
 type JobRelevanceRow = {
@@ -108,6 +118,7 @@ type PendingRelevanceRow = {
   search_profile_name: string;
   keywords: string;
   remote: number;
+  override_note: string | null;
   title: string;
   company: string;
   location: string;
@@ -120,6 +131,8 @@ type PendingRelevanceItem = {
   searchProfileName: string;
   keywords: string;
   remote: boolean;
+  globalGuidance: string;
+  jobOverrideNote: string | null;
   title: string;
   company: string;
   location: string;
@@ -445,6 +458,98 @@ export class Repository {
     };
   }
 
+  getSettings(): AppSettings {
+    const row = this.database
+      .prepare("SELECT value, updated_at FROM app_settings WHERE key = 'relevance_guidance'")
+      .get() as { value: string; updated_at: string } | undefined;
+
+    return {
+      relevanceGuidance: row?.value ?? "",
+      updatedAt: row?.updated_at ?? null
+    };
+  }
+
+  getAiReviewSummary(): AiReviewSummary {
+    const row = this.database
+      .prepare(`
+        SELECT
+          COUNT(*) AS total_count,
+          SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+          SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) AS complete_count,
+          SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+          MAX(updated_at) AS last_updated_at
+        FROM job_profile_relevance
+      `)
+      .get() as {
+      total_count: number;
+      pending_count: number | null;
+      complete_count: number | null;
+      failed_count: number | null;
+      last_updated_at: string | null;
+    };
+
+    const totalCount = row.total_count ?? 0;
+    const pendingCount = row.pending_count ?? 0;
+    const completeCount = row.complete_count ?? 0;
+    const failedCount = row.failed_count ?? 0;
+
+    let status: AiReviewSummary["status"] = "idle";
+    if (totalCount > 0) {
+      if (pendingCount > 0) {
+        status = "in_progress";
+      } else if (failedCount > 0) {
+        status = "completed_with_failures";
+      } else {
+        status = "completed";
+      }
+    }
+
+    return {
+      pendingCount,
+      completeCount,
+      failedCount,
+      totalCount,
+      status,
+      lastUpdatedAt: row.last_updated_at ?? null
+    };
+  }
+
+  setRelevanceGuidance(guidance: string): AppSettings {
+    const now = new Date().toISOString();
+    this.database
+      .prepare(`
+        INSERT INTO app_settings (key, value, updated_at)
+        VALUES ('relevance_guidance', ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+          value = excluded.value,
+          updated_at = excluded.updated_at
+      `)
+      .run(guidance, now);
+
+    return {
+      relevanceGuidance: guidance,
+      updatedAt: now
+    };
+  }
+
+  setJobRelevanceOverride(jobId: number, relevance: RelevanceLabel, note: string): void {
+    const now = new Date().toISOString();
+    this.database
+      .prepare(`
+        INSERT INTO job_relevance_overrides (job_id, relevance, note, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(job_id) DO UPDATE SET
+          relevance = excluded.relevance,
+          note = excluded.note,
+          updated_at = excluded.updated_at
+      `)
+      .run(jobId, relevance, note, now, now);
+  }
+
+  clearJobRelevanceOverride(jobId: number): void {
+    this.database.prepare("DELETE FROM job_relevance_overrides WHERE job_id = ?").run(jobId);
+  }
+
   resetCapturedData(): void {
     const transaction = this.database.transaction(() => {
       this.database.prepare("DELETE FROM job_search_matches").run();
@@ -456,38 +561,45 @@ export class Repository {
     transaction();
   }
 
-  queueRelevanceForRunTarget(
-    runTargetId: string,
+  queueRelevanceForAllJobs(
     config: {
       model: string;
       promptVersion: string;
     },
   ): void {
-    const runTarget = this.getRunTarget(runTargetId);
-    if (!runTarget) {
-      return;
-    }
-
     const rows = this.database
       .prepare(`
-        SELECT
-          jobs.id,
+        SELECT DISTINCT
+          jobs.id AS job_id,
+          search_profiles.id AS search_profile_id,
+          search_profiles.name AS search_profile_name,
+          search_profiles.keywords,
+          search_profiles.remote,
+          overrides.note AS override_note,
           jobs.title,
           jobs.company,
           jobs.location,
           jobs.summary
         FROM jobs
         INNER JOIN job_search_matches ON job_search_matches.job_id = jobs.id
-        WHERE job_search_matches.run_target_id = ?
+        INNER JOIN run_targets ON run_targets.id = job_search_matches.run_target_id
+        INNER JOIN search_profiles ON search_profiles.id = run_targets.search_profile_id
+        LEFT JOIN job_relevance_overrides AS overrides ON overrides.job_id = jobs.id
+        ORDER BY jobs.id ASC
       `)
-      .all(runTargetId) as Array<{
-      id: number;
-      title: string;
-      company: string;
-      location: string;
-      summary: string | null;
-    }>;
+      .all() as PendingRelevanceRow[];
 
+    this.queueRelevanceRows(rows, config);
+  }
+
+  private queueRelevanceRows(
+    rows: PendingRelevanceRow[],
+    config: {
+      model: string;
+      promptVersion: string;
+    },
+  ): void {
+    const guidance = this.getSettings().relevanceGuidance;
     const findExisting = this.database.prepare(`
       SELECT status, source_fingerprint, model, prompt_version
       FROM job_profile_relevance
@@ -519,15 +631,17 @@ export class Repository {
     const now = new Date().toISOString();
     for (const row of rows) {
       const sourceFingerprint = buildRelevanceFingerprint({
-        searchProfileName: runTarget.searchProfileName,
-        keywords: runTarget.keywords,
-        remote: runTarget.remote,
+        searchProfileName: row.search_profile_name,
+        keywords: row.keywords,
+        remote: Boolean(row.remote),
+        globalGuidance: guidance,
+        jobOverrideNote: row.override_note,
         title: row.title,
         company: row.company,
         location: row.location,
         summary: row.summary
       });
-      const existing = findExisting.get(row.id, runTarget.searchProfileId) as
+      const existing = findExisting.get(row.job_id, row.search_profile_id) as
         | {
             status: Exclude<JobProfileRelevance["status"], "unreviewed">;
             source_fingerprint: string;
@@ -546,8 +660,8 @@ export class Repository {
       }
 
       upsert.run({
-        jobId: row.id,
-        searchProfileId: runTarget.searchProfileId,
+        jobId: row.job_id,
+        searchProfileId: row.search_profile_id,
         model: config.model,
         promptVersion: config.promptVersion,
         sourceFingerprint,
@@ -556,7 +670,49 @@ export class Repository {
     }
   }
 
+  queueRelevanceForRunTarget(
+    runTargetId: string,
+    config: {
+      model: string;
+      promptVersion: string;
+    },
+  ): void {
+    const runTarget = this.getRunTarget(runTargetId);
+    if (!runTarget) {
+      return;
+    }
+
+    const rows = this.database
+      .prepare(`
+        SELECT
+          jobs.id AS job_id,
+          ? AS search_profile_id,
+          ? AS search_profile_name,
+          ? AS keywords,
+          ? AS remote,
+          overrides.note AS override_note,
+          jobs.title,
+          jobs.company,
+          jobs.location,
+          jobs.summary
+        FROM jobs
+        INNER JOIN job_search_matches ON job_search_matches.job_id = jobs.id
+        LEFT JOIN job_relevance_overrides AS overrides ON overrides.job_id = jobs.id
+        WHERE job_search_matches.run_target_id = ?
+      `)
+      .all(
+        runTarget.searchProfileId,
+        runTarget.searchProfileName,
+        runTarget.keywords,
+        runTarget.remote ? 1 : 0,
+        runTargetId
+      ) as PendingRelevanceRow[];
+
+    this.queueRelevanceRows(rows, config);
+  }
+
   getNextPendingRelevanceItem(): PendingRelevanceItem | null {
+    const guidance = this.getSettings().relevanceGuidance;
     const row = this.database
       .prepare(`
         SELECT
@@ -565,6 +721,7 @@ export class Repository {
           search_profiles.name AS search_profile_name,
           search_profiles.keywords,
           search_profiles.remote,
+          overrides.note AS override_note,
           jobs.title,
           jobs.company,
           jobs.location,
@@ -572,6 +729,7 @@ export class Repository {
         FROM job_profile_relevance AS relevance
         INNER JOIN jobs ON jobs.id = relevance.job_id
         INNER JOIN search_profiles ON search_profiles.id = relevance.search_profile_id
+        LEFT JOIN job_relevance_overrides AS overrides ON overrides.job_id = jobs.id
         WHERE relevance.status = 'pending'
         ORDER BY relevance.updated_at ASC
         LIMIT 1
@@ -588,6 +746,8 @@ export class Repository {
       searchProfileName: row.search_profile_name,
       keywords: row.keywords,
       remote: Boolean(row.remote),
+      globalGuidance: guidance,
+      jobOverrideNote: row.override_note,
       title: row.title,
       company: row.company,
       location: row.location,
@@ -826,40 +986,68 @@ export class Repository {
       collection.push(row);
       relevanceByJobId.set(row.job_id, collection);
     }
+    const overrideRows = jobIds.length
+      ? (this.database
+          .prepare(`
+            SELECT job_id, relevance, note, created_at, updated_at
+            FROM job_relevance_overrides
+            WHERE job_id IN (${jobIds.map(() => "?").join(",")})
+          `)
+          .all(...jobIds) as JobOverrideRow[])
+      : [];
+    const overridesByJobId = new Map<number, JobOverrideRow>();
+    for (const row of overrideRows) {
+      overridesByJobId.set(row.job_id, row);
+    }
 
-    return rows.map((row) => ({
-      ...aggregateJobRelevance(
+    return rows.map((row) => {
+      const aggregated = aggregateJobRelevance(
         (relevanceByJobId.get(row.id) ?? []).map((relevance) => ({
           status: relevance.status,
           relevance: relevance.relevance,
           confidence: relevance.confidence,
           reason: relevance.reason
         })),
-      ),
-      id: row.id,
-      source: row.source,
-      sourceJobId: row.source_job_id,
-      dedupeKey: row.dedupe_key,
-      normalizedUrl: row.normalized_url,
-      isLinkable: Boolean(row.is_linkable),
-      title: row.title,
-      company: row.company,
-      location: row.location,
-      summary: row.summary,
-      firstCapturedAt: row.first_captured_at,
-      lastSeenAt: row.last_seen_at,
-      status: row.status,
-      matchingSearchProfiles: row.matching_search_profiles
-        ? [...new Set(row.matching_search_profiles.split("||").filter(Boolean))].sort((a, b) =>
-            a.localeCompare(b),
-          )
-        : [],
-      matchingRunLocations: row.matching_run_locations
-        ? [...new Set(row.matching_run_locations.split("||").filter(Boolean))].sort((a, b) =>
-            a.localeCompare(b),
-          )
-        : []
-    }));
+      );
+      const override = overridesByJobId.get(row.id);
+      const effective = resolveEffectiveJobRelevance(
+        aggregated,
+        override
+          ? {
+              relevance: override.relevance,
+              note: override.note
+            }
+          : undefined,
+      );
+
+      return {
+        ...aggregated,
+        ...effective,
+        id: row.id,
+        source: row.source,
+        sourceJobId: row.source_job_id,
+        dedupeKey: row.dedupe_key,
+        normalizedUrl: row.normalized_url,
+        isLinkable: Boolean(row.is_linkable),
+        title: row.title,
+        company: row.company,
+        location: row.location,
+        summary: row.summary,
+        firstCapturedAt: row.first_captured_at,
+        lastSeenAt: row.last_seen_at,
+        status: row.status,
+        matchingSearchProfiles: row.matching_search_profiles
+          ? [...new Set(row.matching_search_profiles.split("||").filter(Boolean))].sort((a, b) =>
+              a.localeCompare(b),
+            )
+          : [],
+        matchingRunLocations: row.matching_run_locations
+          ? [...new Set(row.matching_run_locations.split("||").filter(Boolean))].sort((a, b) =>
+              a.localeCompare(b),
+            )
+          : []
+      };
+    });
   }
 
   updateJobStatus(jobId: number, status: JobStatus): void {
