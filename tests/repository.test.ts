@@ -131,6 +131,61 @@ describe("Repository", () => {
     expect(csv).toContain("Vancouver, BC");
   });
 
+  it("exports only effectively relevant jobs for the HTML snapshot", () => {
+    const repository = createRepository();
+    repository.replaceSearchProfiles([
+      {
+        id: "fitness",
+        name: "Fitness",
+        keywords: "fitness coach",
+        location: "",
+        remote: true
+      }
+    ]);
+    const searches = repository.listSearchProfiles();
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
+      runMode: "fixed",
+      maxPages: 1,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
+
+    repository.ingestCapture({
+      source: "indeed",
+      runTargetId: targets[0].id,
+      pageUrl: "https://ca.indeed.com/jobs?q=fitness+coach",
+      listings: [
+        {
+          sourceJobId: "jk-fit",
+          url: "https://ca.indeed.com/viewjob?jk=jk-fit",
+          title: "Fitness Coach",
+          company: "Acme",
+          location: "Remote"
+        },
+        {
+          sourceJobId: "jk-pt",
+          url: "https://ca.indeed.com/viewjob?jk=jk-pt",
+          title: "PT Steward",
+          company: "Other",
+          location: "Remote"
+        }
+      ]
+    });
+
+    const jobs = repository.listJobs();
+    repository.setJobRelevanceOverride(jobs[0].id, "relevant", "Clearly in scope.");
+    repository.setJobRelevanceOverride(jobs[1].id, "irrelevant", "Wrong role.");
+
+    const exportJobs = repository.listRelevantJobsForExport();
+    expect(exportJobs).toHaveLength(1);
+    expect(exportJobs[0].title).toBe("Fitness Coach");
+  });
+
   it("keeps remote listings for remote profiles scoped to a city", () => {
     const repository = createRepository();
     repository.replaceSearchProfiles([

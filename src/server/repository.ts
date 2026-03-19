@@ -1054,6 +1054,10 @@ export class Repository {
     this.database.prepare("UPDATE jobs SET status = ? WHERE id = ?").run(status, jobId);
   }
 
+  listRelevantJobsForExport(): JobRecord[] {
+    return this.listJobs().filter((job) => job.effectiveRelevanceLabel === "relevant");
+  }
+
   exportJobsCsv(): string {
     const rows: JobCsvRow[] = this.listJobs().map((job) => ({
       title: job.title,

@@ -16,6 +16,7 @@ Current scope: the app is restricted to Canadian locations and uses `ca.indeed.c
 - Lets you add app-wide AI guidance, override relevance on individual jobs, and manually re-review jobs with that guidance.
 - Stores jobs in local SQLite with deduplication and status tracking.
 - Exports the current deduplicated job list as CSV.
+- Exports a self-contained HTML snapshot of relevant jobs that can be opened locally.
 
 ## Search Profile Format
 
@@ -101,6 +102,7 @@ Notes:
 - Relevance classification runs in the background after capture.
 - The Review Jobs table hides AI-irrelevant jobs by default, but you can show them with the toggle.
 - The Review Jobs table shows the first 240 characters of each explanation by default and lets you expand longer explanations inline.
+- The `Export App` action downloads a standalone HTML file containing only effectively relevant jobs.
 - If `OPENAI_API_KEY` is not set, jobs remain `Unreviewed`.
 - The app uses OpenAI's `responses` API. If `OPENAI_MODEL` is omitted, it now defaults to `gpt-5.4`.
 - `OPENAI_REASONING_EFFORT` is optional and accepts `none`, `low`, `medium`, `high`, or `xhigh`. The default is `low`.

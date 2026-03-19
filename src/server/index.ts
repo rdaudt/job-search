@@ -22,6 +22,7 @@ import {
 import { openSearchUrls } from "./browser.js";
 import { createDatabase, ensureDataDir } from "./db.js";
 import { parseSearchProfilesFile } from "./importers.js";
+import { renderJobsHtmlExport } from "./export/html-export.js";
 import { OpenAIRelevanceClassifier } from "./relevance/openai-classifier.js";
 import { startRelevanceWorker } from "./relevance/worker.js";
 import { Repository } from "./repository.js";
@@ -309,6 +310,13 @@ app.get("/api/jobs/export.csv", (_req, res) => {
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", "attachment; filename=\"jobs.csv\"");
   res.send(csv);
+});
+
+app.get("/api/jobs/export.html", (_req, res) => {
+  const html = renderJobsHtmlExport(repository.listRelevantJobsForExport(), new Date().toISOString());
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Content-Disposition", "attachment; filename=\"jobs-app.html\"");
+  res.send(html);
 });
 
 app.get("*", (_req, res) => {
