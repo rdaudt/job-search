@@ -307,19 +307,20 @@ function renderJobs(jobs: JobRecord[]): void {
   );
 
   if (!visibleJobs.length) {
-    jobsBody.innerHTML = `<tr><td colspan="10" class="empty-cell">No jobs match the current filter.</td></tr>`;
+    jobsBody.innerHTML = `<tr><td colspan="11" class="empty-cell">No jobs match the current filter.</td></tr>`;
     return;
   }
 
   jobsBody.innerHTML = visibleJobs
     .map(
-      (job) => {
+      (job, index) => {
         const draft = overrideDrafts.get(job.id);
         const overrideValue = draft?.relevance ?? job.userOverrideLabel ?? "";
         const overrideNote = draft?.note ?? job.userOverrideNote ?? "";
 
         return `
         <tr>
+          <td class="row-index">${index + 1}</td>
           <td>
             ${
               job.isLinkable

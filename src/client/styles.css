@@ -230,6 +230,13 @@ th {
   color: var(--muted);
 }
 
+.row-index {
+  width: 52px;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .job-title {
   font-weight: 700;
   display: block;
