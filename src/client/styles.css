@@ -21,14 +21,24 @@ body {
     radial-gradient(circle at top left, rgba(244, 211, 94, 0.35), transparent 28%),
     linear-gradient(180deg, #faf7f2 0%, var(--bg) 100%);
   color: var(--ink);
+  overflow-x: hidden;
 }
 
 .app-shell {
-  max-width: 1120px;
+  width: min(1320px, calc(100% - 40px));
+  max-width: 1320px;
   margin: 0 auto;
   padding: 48px 20px 80px;
   display: grid;
   gap: 20px;
+  justify-items: center;
+  min-width: 0;
+}
+
+.app-shell > * {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .hero {
@@ -68,6 +78,7 @@ h1 {
   padding: 24px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(14px);
+  min-width: 0;
 }
 
 .panel-header {
@@ -361,11 +372,15 @@ a {
 
 .table-wrap {
   margin-top: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
 }
 
 table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
 }
 
