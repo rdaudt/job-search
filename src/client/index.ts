@@ -2,15 +2,12 @@ import type { AiReviewSummary, AppSummary, JobRecord, JobStatus, PersistedSearch
 import {
   applyColumnFilters,
   countActiveColumnFilters,
-  EXPLANATION_PREVIEW_LENGTH,
   filterableJobFields,
   getDefaultSortDirection,
   getDistinctFilterOptions,
-  getJobFilterValues,
   getJobCity,
   getJobProvince,
   getRelevanceExplanation,
-  getRelevanceExplanationPreview,
   getRelevanceFlagStatus,
   jobSortFields,
   sortJobs,
@@ -54,6 +51,7 @@ const aiReviewBarFill = document.querySelector<HTMLElement>("#ai-review-bar-fill
 const aiReviewCounts = document.querySelector<HTMLElement>("#ai-review-counts");
 const aiReviewUpdated = document.querySelector<HTMLElement>("#ai-review-updated");
 const jobsBody = document.querySelector<HTMLElement>("#jobs-body");
+const jobDetail = document.querySelector<HTMLElement>("#job-detail");
 const toggleColumnFiltersButton = document.querySelector<HTMLButtonElement>("#toggle-column-filters");
 const clearColumnFiltersButton = document.querySelector<HTMLButtonElement>("#clear-column-filters");
 const columnFilterCount = document.querySelector<HTMLElement>("#column-filter-count");
@@ -85,7 +83,6 @@ let currentSortField: JobSortField = "relevance";
 let currentSortDirection: SortDirection = "asc";
 let guidanceDraft: string | null = null;
 const overrideDrafts = new Map<number, { relevance: string; note: string }>();
-const expandedExplanationJobIds = new Set<number>();
 let previousAiPendingCount = 0;
 let currentJobs: JobRecord[] = [];
 let currentVisibleJobs: JobRecord[] = [];
@@ -94,6 +91,7 @@ let isColumnFilterModeEnabled = false;
 let activeColumnFilters: ActiveColumnFilters = {};
 let openColumnFilterField: FilterableJobField | null = null;
 let columnFilterSearchTerm = "";
+let selectedJobId: number | null = null;
 
 function showToast(message: string): void {
   if (!toast) {
@@ -209,9 +207,7 @@ function renderSearches(searches: PersistedSearchProfile[]): void {
     .map(
       (profile) => `
         <article class="search-card">
-          <h3>${profile.name}</h3>
-          <p class="search-meta"><strong>ID:</strong> ${profile.id}</p>
-          <p class="search-meta"><strong>Keywords:</strong> ${profile.keywords}</p>
+          <h3>${profile.keywords}</h3>
           <p class="search-meta"><strong>Location:</strong> ${profile.location || "Any"}</p>
           <p class="search-meta"><strong>Remote:</strong> ${profile.remote ? "Yes" : "No"}</p>
         </article>
@@ -517,7 +513,7 @@ function renderRuns(runs: RunRecord[], latestRunTargets: RunTarget[]): void {
           .map(
             (target) => `
               <li class="run-target-item">
-                <strong>${target.searchProfileName}</strong>
+                <strong>${target.keywords}</strong>
                 <span>${target.location || "Any"}</span>
                 <span>${
                   target.runMode === "auto"
@@ -570,6 +566,93 @@ function statusOptions(selected: JobStatus): string {
     .join("");
 }
 
+function formatJoinedValues(values: string[], fallback: string): string {
+  const filtered = values.map((value) => value.trim()).filter(Boolean);
+  return escapeHtml(filtered.length ? filtered.join(", ") : fallback);
+}
+
+function formatMultilineText(value: string): string {
+  return escapeHtml(value).replace(/\r?\n/g, "<br />");
+}
+
+function renderJobDetail(job: JobRecord | null): void {
+  if (!jobDetail) {
+    return;
+  }
+
+  if (!job) {
+    jobDetail.className = "job-detail empty-state";
+    jobDetail.innerHTML = "No jobs match the current filter.";
+    return;
+  }
+
+  const draft = overrideDrafts.get(job.id);
+  const overrideValue = draft?.relevance ?? job.userOverrideLabel ?? "";
+  const overrideNote = draft?.note ?? job.userOverrideNote ?? "";
+  const city = getJobCity(job) || "Unknown";
+  const province = getJobProvince(job) || "Unknown";
+  const explanation = getRelevanceExplanation(job);
+  const company = job.company?.trim() ? job.company : "Unknown";
+  const summary = job.summary?.trim() ?? "";
+
+  jobDetail.className = "job-detail";
+  jobDetail.innerHTML = `
+    <div class="job-detail-header">
+      <div>
+        <p class="detail-kicker">Selected job</p>
+        ${
+          job.isLinkable
+            ? `<a class="job-link detail-title-link" href="${escapeHtml(job.normalizedUrl)}" target="_blank" rel="noreferrer"><h3 class="job-detail-title">${escapeHtml(job.title)}</h3></a>`
+            : `<h3 class="job-detail-title">${escapeHtml(job.title)}</h3>`
+        }
+        <p class="job-detail-company">${escapeHtml(company)} | ${escapeHtml(city)}, ${escapeHtml(province)}</p>
+      </div>
+      <span class="job-relevance ${job.hasUserOverride ? "user-override" : ""}">${getRelevanceFlagStatus(job)}</span>
+    </div>
+    ${summary ? `<p class="job-detail-summary">${escapeHtml(summary)}</p>` : ""}
+    <div class="job-detail-section">
+      <h4>Explanation</h4>
+      <p class="job-detail-explanation">${formatMultilineText(explanation)}</p>
+    </div>
+    <div class="job-detail-grid">
+      <div class="job-detail-section">
+        <h4>Searches</h4>
+        <p>${formatJoinedValues(job.matchingSearchProfiles, "Unknown")}</p>
+      </div>
+      <div class="job-detail-section">
+        <h4>Run locations</h4>
+        <p>${formatJoinedValues(job.matchingRunLocations, "Any")}</p>
+      </div>
+      <div class="job-detail-section">
+        <h4>Last seen</h4>
+        <p>${escapeHtml(new Date(job.lastSeenAt).toLocaleString())}</p>
+      </div>
+      <div class="job-detail-section">
+        <h4>Status</h4>
+        <select class="status-select" data-job-id="${job.id}">
+          ${statusOptions(job.status)}
+        </select>
+      </div>
+    </div>
+    <div class="job-detail-section">
+      <h4>Override</h4>
+      <div class="override-controls detail-override-controls">
+        <select class="override-select" data-job-id="${job.id}">
+          <option value="">No override</option>
+          <option value="relevant" ${overrideValue === "relevant" ? "selected" : ""}>Relevant</option>
+          <option value="borderline" ${overrideValue === "borderline" ? "selected" : ""}>Borderline</option>
+          <option value="irrelevant" ${overrideValue === "irrelevant" ? "selected" : ""}>Irrelevant</option>
+        </select>
+        <textarea class="override-note" data-job-id="${job.id}" rows="4" placeholder="Explain why this job should be treated differently.">${escapeHtml(overrideNote)}</textarea>
+        <div class="override-actions">
+          <button class="save-override-button" type="button" data-job-id="${job.id}">Save</button>
+          <button class="clear-override-button" type="button" data-job-id="${job.id}" ${job.hasUserOverride || Boolean(draft?.relevance || draft?.note) ? "" : "disabled"}>Clear</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderJobs(jobs: JobRecord[]): void {
   if (!jobsBody) {
     return;
@@ -583,78 +666,61 @@ function renderJobs(jobs: JobRecord[]): void {
   renderColumnFilterPopover();
 
   if (!visibleJobs.length) {
-    jobsBody.innerHTML = `<tr><td colspan="12" class="empty-cell">No jobs match the current filter.</td></tr>`;
+    selectedJobId = null;
+    jobsBody.innerHTML = `<tr><td colspan="6" class="empty-cell">No jobs match the current filter.</td></tr>`;
+    renderJobDetail(null);
     return;
+  }
+
+  if (!visibleJobs.some((job) => job.id === selectedJobId)) {
+    selectedJobId = visibleJobs[0]?.id ?? null;
   }
 
   jobsBody.innerHTML = visibleJobs
     .map(
-      (job, index) => {
-        const draft = overrideDrafts.get(job.id);
-        const overrideValue = draft?.relevance ?? job.userOverrideLabel ?? "";
-        const overrideNote = draft?.note ?? job.userOverrideNote ?? "";
-        const isExplanationExpanded = expandedExplanationJobIds.has(job.id);
-        const explanationPreview = getRelevanceExplanationPreview(job, EXPLANATION_PREVIEW_LENGTH);
-        const explanationText = isExplanationExpanded ? getRelevanceExplanation(job) : explanationPreview.text;
-        const explanationToggleLabel = isExplanationExpanded ? "Show less" : "Show more";
-
-        return `
-        <tr>
+      (job, index) => `
+        <tr class="job-row ${job.id === selectedJobId ? "is-selected" : ""}" data-job-id="${job.id}">
           <td class="row-index">${index + 1}</td>
           <td>
             ${
               job.isLinkable
-                ? `<a class="job-link" href="${job.normalizedUrl}" target="_blank" rel="noreferrer">
-              <span class="job-title">${job.title}</span>
+                ? `<a class="job-link" href="${escapeHtml(job.normalizedUrl)}" target="_blank" rel="noreferrer">
+              <span class="job-title">${escapeHtml(job.title)}</span>
             </a>`
-                : `<span class="job-title">${job.title}</span>`
+                : `<span class="job-title">${escapeHtml(job.title)}</span>`
             }
-            ${job.summary ? `<p class="job-summary">${job.summary}</p>` : ""}
+            ${job.summary ? `<p class="job-summary">${escapeHtml(job.summary)}</p>` : ""}
           </td>
-          <td>${job.company || "Unknown"}</td>
-          <td>${getJobCity(job) || "Unknown"}</td>
-          <td>${getJobProvince(job) || "Unknown"}</td>
+          <td>${escapeHtml(job.company?.trim() ? job.company : "Unknown")}</td>
+          <td>${escapeHtml(getJobCity(job) || "Unknown")}</td>
+          <td>${escapeHtml(getJobProvince(job) || "Unknown")}</td>
           <td><span class="job-relevance ${job.hasUserOverride ? "user-override" : ""}">${getRelevanceFlagStatus(job)}</span></td>
-          <td>
-            <div class="job-explanation">
-              <span class="job-summary ${isExplanationExpanded ? "job-summary-expanded" : ""}">${explanationText}</span>
-              ${
-                explanationPreview.isTruncated
-                  ? `<button class="explanation-toggle" type="button" data-job-id="${job.id}" aria-expanded="${isExplanationExpanded}">
-                ${explanationToggleLabel}
-              </button>`
-                  : ""
-              }
-            </div>
-          </td>
-          <td>${job.matchingSearchProfiles.join(", ") || "Unknown"}</td>
-          <td>${job.matchingRunLocations.join(", ") || "Any"}</td>
-          <td>${new Date(job.lastSeenAt).toLocaleString()}</td>
-          <td>
-            <select class="status-select" data-job-id="${job.id}">
-              ${statusOptions(job.status)}
-            </select>
-          </td>
-          <td>
-            <div class="override-controls">
-              <select class="override-select" data-job-id="${job.id}">
-                <option value="">No override</option>
-                <option value="relevant" ${overrideValue === "relevant" ? "selected" : ""}>Relevant</option>
-                <option value="borderline" ${overrideValue === "borderline" ? "selected" : ""}>Borderline</option>
-                <option value="irrelevant" ${overrideValue === "irrelevant" ? "selected" : ""}>Irrelevant</option>
-              </select>
-              <textarea class="override-note" data-job-id="${job.id}" rows="3" placeholder="Explain why this job should be treated differently.">${overrideNote}</textarea>
-              <div class="override-actions">
-                <button class="save-override-button" type="button" data-job-id="${job.id}">Save</button>
-                <button class="clear-override-button" type="button" data-job-id="${job.id}" ${job.hasUserOverride || Boolean(draft?.relevance || draft?.note) ? "" : "disabled"}>Clear</button>
-              </div>
-            </div>
-          </td>
         </tr>
-      `;
-      },
+      `,
     )
     .join("");
+
+  renderJobDetail(visibleJobs.find((job) => job.id === selectedJobId) ?? visibleJobs[0] ?? null);
+  bindJobRowSelection();
+  bindStatusEditors();
+  bindOverrideEditors();
+}
+
+function bindJobRowSelection(): void {
+  document.querySelectorAll<HTMLTableRowElement>(".job-row").forEach((row) => {
+    row.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("a")) {
+        return;
+      }
+      const jobId = Number(row.dataset.jobId);
+      if (!Number.isInteger(jobId)) {
+        return;
+      }
+      selectedJobId = jobId;
+      renderJobs(currentJobs);
+    });
+  });
 }
 
 function bindStatusEditors(): void {
@@ -673,23 +739,7 @@ function bindStatusEditors(): void {
       }
 
       showToast(`Status updated to ${select.value}.`);
-    });
-  });
-}
-
-function bindExplanationToggles(): void {
-  document.querySelectorAll<HTMLButtonElement>(".explanation-toggle").forEach((button) => {
-    button.addEventListener("click", () => {
-      const jobId = Number(button.dataset.jobId);
-      if (expandedExplanationJobIds.has(jobId)) {
-        expandedExplanationJobIds.delete(jobId);
-      } else {
-        expandedExplanationJobIds.add(jobId);
-      }
-      renderJobs(currentJobs);
-      bindStatusEditors();
-      bindOverrideEditors();
-      bindExplanationToggles();
+      await loadSummary();
     });
   });
 }
@@ -830,9 +880,6 @@ async function loadSummary(): Promise<void> {
     renderJobs(summary.jobs);
     renderRunSummary();
     renderSortIndicators();
-    bindStatusEditors();
-    bindOverrideEditors();
-    bindExplanationToggles();
 
     if (hasLoadedSummary && summary.jobs.length > previousJobCount) {
       const captured = summary.jobs.length - previousJobCount;

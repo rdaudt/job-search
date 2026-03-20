@@ -25,8 +25,6 @@ JSON example:
 ```json
 [
   {
-    "id": "frontend-remote",
-    "name": "Frontend Remote",
     "keywords": "frontend engineer react typescript",
     "location": "Vancouver, BC",
     "remote": true
@@ -37,11 +35,13 @@ JSON example:
 CSV columns:
 
 ```text
-id,name,keywords,location,remote
-frontend-remote,Frontend Remote,frontend engineer react typescript,"Vancouver, BC",true
+keywords,location,remote
+frontend engineer react typescript,"Vancouver, BC",true
 ```
 
-`location` is now a default location for that imported profile. It is optional, but if provided it must be a Canadian location. You can override it at run time from the app UI with one or more Canadian run locations.
+Only `keywords`, `location`, and `remote` are required from the user. If `id` or `name` are present in older files, the app still accepts them, but it now generates internal identifiers automatically when they are omitted.
+
+`location` is a default location for that imported profile. It is optional, but if provided it must be a Canadian location. You can override it at run time from the app UI with one or more Canadian run locations.
 
 ## Run It
 
