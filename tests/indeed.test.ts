@@ -5,7 +5,12 @@ import {
   normalizeIndeedResultsPageUrl,
   parseIndeedPageNumber
 } from "../src/shared/indeed.js";
-import { listingMatchesCanadianScope, listingMatchesRunLocation, selectIndeedHostForLocation } from "../src/shared/location-utils.js";
+import {
+  listingMatchesCanadianScope,
+  listingMatchesRunLocation,
+  selectIndeedHostForLocation,
+  splitJobLocation
+} from "../src/shared/location-utils.js";
 
 describe("indeedAdapter", () => {
   it("builds a search URL with run target metadata", () => {
@@ -77,6 +82,17 @@ describe("indeedAdapter", () => {
     expect(listingMatchesRunLocation("Remote", "Vancouver, BC", true)).toBe(true);
     expect(listingMatchesRunLocation("Remote in British Columbia", "Vancouver, BC", true)).toBe(true);
     expect(listingMatchesRunLocation("Remote in United States", "Vancouver, BC", true)).toBe(false);
+  });
+
+  it("splits job locations into city and province while dropping postal codes", () => {
+    expect(splitJobLocation("Burnaby, BC V5H 2S8")).toEqual({
+      city: "Burnaby",
+      province: "BC"
+    });
+    expect(splitJobLocation("Remote in British Columbia")).toEqual({
+      city: "Remote",
+      province: "BC"
+    });
   });
 
   it("canonicalizes sponsored links when a job id is present", () => {

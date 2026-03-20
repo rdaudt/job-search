@@ -25,6 +25,11 @@ type ParsedRunLocation = {
   countryCode: "ca" | "us" | null;
 };
 
+type DisplayJobLocation = {
+  city: string;
+  province: string;
+};
+
 const regionInfos: RegionInfo[] = [
   { code: "bc", countryCode: "ca", aliases: ["bc", "british columbia"] },
   { code: "ab", countryCode: "ca", aliases: ["ab", "alberta"] },
@@ -236,4 +241,39 @@ export function listingMatchesRunLocation(listingLocation: string, runLocation: 
   }
 
   return true;
+}
+
+export function splitJobLocation(rawLocation: string): DisplayJobLocation {
+  const trimmed = rawLocation.trim().replace(/\s+/g, " ");
+  if (!trimmed) {
+    return {
+      city: "",
+      province: ""
+    };
+  }
+
+  if (/^remote\b/i.test(trimmed)) {
+    const regionInfo = resolveRegionInfo(trimmed);
+    return {
+      city: "Remote",
+      province: regionInfo?.countryCode === "ca" ? regionInfo.code.toUpperCase() : ""
+    };
+  }
+
+  const parts = trimmed
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const city = titleCase(parts[0] ?? "");
+  const remainder = parts.slice(1).join(", ").trim();
+  const withoutPostalCode = remainder
+    .replace(/\b[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ -]?\d[ABCEGHJ-NPRSTV-Z]\d\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const regionInfo = resolveRegionInfo(withoutPostalCode) ?? resolveRegionInfo(trimmed);
+
+  return {
+    city,
+    province: regionInfo?.countryCode === "ca" ? regionInfo.code.toUpperCase() : ""
+  };
 }

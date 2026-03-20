@@ -212,6 +212,14 @@ a {
   margin-top: 12px;
 }
 
+.run-history-details {
+  margin-top: 18px;
+}
+
+.run-history-details .run-history-section {
+  margin-top: 12px;
+}
+
 .section-title {
   margin: 0 0 14px;
   font-size: 1rem;

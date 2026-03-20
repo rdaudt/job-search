@@ -3,6 +3,8 @@ import type { JobRecord } from "../src/shared/types.js";
 import {
   EXPLANATION_PREVIEW_LENGTH,
   getDefaultSortDirection,
+  getJobCity,
+  getJobProvince,
   getRelevanceExplanation,
   getRelevanceExplanationPreview,
   getRelevanceFilterValue,
@@ -22,6 +24,8 @@ function buildJob(overrides: Partial<JobRecord>): JobRecord {
     title: "Fitness Coach",
     company: "Acme",
     location: "Vancouver, BC",
+    locationCity: "Vancouver",
+    locationProvince: "BC",
     summary: "Coach clients",
     firstCapturedAt: "2026-03-19T10:00:00.000Z",
     lastSeenAt: "2026-03-19T10:00:00.000Z",
@@ -155,6 +159,17 @@ describe("job table helpers", () => {
 
     expect(getRelevanceFlagStatus(overridden)).toBe("Relevant");
     expect(getRelevanceExplanation(overridden)).toBe("Leadership-track roles are in scope.");
+  });
+
+  it("falls back to parsing city and province from the raw location string", () => {
+    const job = buildJob({
+      location: "Burnaby, BC V5H 2S8",
+      locationCity: "",
+      locationProvince: ""
+    });
+
+    expect(getJobCity(job)).toBe("Burnaby");
+    expect(getJobProvince(job)).toBe("BC");
   });
 
   it("returns a truncated explanation preview when the explanation exceeds 240 characters", () => {

@@ -1,4 +1,5 @@
 import type { JobRecord } from "../../shared/types.js";
+import { splitJobLocation } from "../../shared/location-utils.js";
 
 function escapeHtml(value: string): string {
   return value
@@ -17,10 +18,21 @@ function renderTitleCell(job: JobRecord): string {
   return title;
 }
 
+function getExportCity(job: JobRecord): string {
+  return job.locationCity || splitJobLocation(job.location || "").city;
+}
+
+function getExportProvince(job: JobRecord): string {
+  return job.locationProvince || splitJobLocation(job.location || "").province;
+}
+
 function renderRow(job: JobRecord, index: number): string {
+  const city = getExportCity(job);
+  const province = getExportProvince(job);
   const titleSort = escapeHtml(job.title.toLowerCase());
   const companySort = escapeHtml((job.company || "").toLowerCase());
-  const locationSort = escapeHtml((job.location || "").toLowerCase());
+  const citySort = escapeHtml(city.toLowerCase());
+  const provinceSort = escapeHtml(province.toLowerCase());
   const relevanceSort = escapeHtml((job.effectiveRelevanceLabel || "").toLowerCase());
   const explanationSort = escapeHtml((job.effectiveRelevanceExplanation || "").toLowerCase());
   const searchesSort = escapeHtml(job.matchingSearchProfiles.join(", ").toLowerCase());
@@ -30,7 +42,8 @@ function renderRow(job: JobRecord, index: number): string {
     <tr
       data-title="${titleSort}"
       data-company="${companySort}"
-      data-location="${locationSort}"
+      data-city="${citySort}"
+      data-province="${provinceSort}"
       data-relevance="${relevanceSort}"
       data-explanation="${explanationSort}"
       data-searches="${searchesSort}"
@@ -39,7 +52,8 @@ function renderRow(job: JobRecord, index: number): string {
       <td class="row-number">${index + 1}</td>
       <td>${renderTitleCell(job)}</td>
       <td>${escapeHtml(job.company || "Unknown")}</td>
-      <td>${escapeHtml(job.location || "Unknown")}</td>
+      <td>${escapeHtml(city || "Unknown")}</td>
+      <td>${escapeHtml(province || "Unknown")}</td>
       <td>${escapeHtml(job.effectiveRelevanceLabel === "relevant" ? "Relevant" : "Relevant")}</td>
       <td class="explanation-cell">${escapeHtml(job.effectiveRelevanceExplanation || "")}</td>
       <td>${escapeHtml(job.matchingSearchProfiles.join(", ") || "Unknown")}</td>
@@ -264,7 +278,8 @@ export function renderJobsHtmlExport(jobs: JobRecord[], generatedAt: string): st
                 <th>#</th>
                 <th><button class="sort-button" type="button" data-sort-field="title">Title</button></th>
                 <th><button class="sort-button" type="button" data-sort-field="company">Company</button></th>
-                <th><button class="sort-button" type="button" data-sort-field="location">Location</button></th>
+                <th><button class="sort-button" type="button" data-sort-field="city">City</button></th>
+                <th><button class="sort-button" type="button" data-sort-field="province">Province</button></th>
                 <th><button class="sort-button" type="button" data-sort-field="relevance">Relevance flag/status</button></th>
                 <th><button class="sort-button" type="button" data-sort-field="explanation">Explanation</button></th>
                 <th><button class="sort-button" type="button" data-sort-field="searches">Searches</button></th>

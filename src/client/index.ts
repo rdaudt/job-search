@@ -2,6 +2,8 @@ import type { AiReviewSummary, AppSummary, JobRecord, JobStatus, PersistedSearch
 import {
   EXPLANATION_PREVIEW_LENGTH,
   getDefaultSortDirection,
+  getJobCity,
+  getJobProvince,
   getRelevanceExplanation,
   getRelevanceExplanationPreview,
   getRelevanceFlagStatus,
@@ -352,7 +354,7 @@ function renderJobs(jobs: JobRecord[]): void {
   );
 
   if (!visibleJobs.length) {
-    jobsBody.innerHTML = `<tr><td colspan="11" class="empty-cell">No jobs match the current filter.</td></tr>`;
+    jobsBody.innerHTML = `<tr><td colspan="12" class="empty-cell">No jobs match the current filter.</td></tr>`;
     return;
   }
 
@@ -381,7 +383,8 @@ function renderJobs(jobs: JobRecord[]): void {
             ${job.summary ? `<p class="job-summary">${job.summary}</p>` : ""}
           </td>
           <td>${job.company || "Unknown"}</td>
-          <td>${job.location || "Unknown"}</td>
+          <td>${getJobCity(job) || "Unknown"}</td>
+          <td>${getJobProvince(job) || "Unknown"}</td>
           <td><span class="job-relevance ${job.hasUserOverride ? "user-override" : ""}">${getRelevanceFlagStatus(job)}</span></td>
           <td>
             <div class="job-explanation">

@@ -13,6 +13,8 @@ function buildJob(overrides: Partial<JobRecord>): JobRecord {
     title: "Fitness Coach",
     company: "Acme Fitness",
     location: "Vancouver, BC",
+    locationCity: "Vancouver",
+    locationProvince: "BC",
     summary: "Coach clients",
     firstCapturedAt: "2026-03-19T10:00:00.000Z",
     lastSeenAt: "2026-03-19T10:00:00.000Z",

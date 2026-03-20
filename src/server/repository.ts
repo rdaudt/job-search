@@ -18,7 +18,7 @@ import type {
   SearchProfile
 } from "../shared/types.js";
 import type { SourceAdapter } from "../shared/types.js";
-import { listingMatchesCanadianScope, listingMatchesRunLocation } from "../shared/location-utils.js";
+import { listingMatchesCanadianScope, listingMatchesRunLocation, splitJobLocation } from "../shared/location-utils.js";
 import type { RelevanceResult } from "./relevance/utils.js";
 import { aggregateJobRelevance, buildRelevanceFingerprint, resolveEffectiveJobRelevance } from "./relevance/utils.js";
 
@@ -1032,6 +1032,7 @@ export class Repository {
         title: row.title,
         company: row.company,
         location: row.location,
+        ...splitJobLocation(row.location),
         summary: row.summary,
         firstCapturedAt: row.first_captured_at,
         lastSeenAt: row.last_seen_at,

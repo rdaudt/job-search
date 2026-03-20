@@ -192,13 +192,16 @@
             </p>
           </aside>
         </div>
-        <div class="run-history-section">
-          <div class="subsection-header">
-            <h3 class="section-title">Recent runs</h3>
-            <p class="helper">Review the latest run activity and page-by-page stop reasons.</p>
+        <details class="advanced-options run-history-details">
+          <summary>Recent runs</summary>
+          <div class="run-history-section">
+            <div class="subsection-header">
+              <h3 class="section-title">Recent runs</h3>
+              <p class="helper">Review the latest run activity and page-by-page stop reasons.</p>
+            </div>
+            <div id="runs" class="runs empty-state">No runs yet.</div>
           </div>
-          <div id="runs" class="runs empty-state">No runs yet.</div>
-        </div>
+        </details>
       </section>
 
       <section class="panel">
@@ -255,7 +258,8 @@
                 <th>#</th>
                 <th><button class="sort-button" type="button" data-sort-field="title">Title</button></th>
                 <th><button class="sort-button" type="button" data-sort-field="company">Company</button></th>
-                <th><button class="sort-button" type="button" data-sort-field="location">Location</button></th>
+                <th><button class="sort-button" type="button" data-sort-field="city">City</button></th>
+                <th><button class="sort-button" type="button" data-sort-field="province">Province</button></th>
                 <th><button class="sort-button" type="button" data-sort-field="relevance">Relevance Flag/Status</button></th>
                 <th><button class="sort-button" type="button" data-sort-field="explanation">Explanation</button></th>
                 <th><button class="sort-button" type="button" data-sort-field="searches">Searches</button></th>
@@ -267,7 +271,7 @@
             </thead>
             <tbody id="jobs-body">
               <tr>
-                <td colspan="11" class="empty-cell">No captured jobs yet.</td>
+                <td colspan="12" class="empty-cell">No captured jobs yet.</td>
               </tr>
             </tbody>
           </table>

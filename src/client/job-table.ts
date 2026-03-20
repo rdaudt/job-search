@@ -1,4 +1,5 @@
 import type { JobRecord } from "../shared/types.js";
+import { splitJobLocation } from "../shared/location-utils.js";
 
 export const relevanceFilterValues = [
   "all",
@@ -15,7 +16,8 @@ export type RelevanceFilterValue = (typeof relevanceFilterValues)[number];
 export const jobSortFields = [
   "title",
   "company",
-  "location",
+  "city",
+  "province",
   "relevance",
   "explanation",
   "searches",
@@ -46,6 +48,14 @@ const jobStatusRank: Record<JobRecord["status"], number> = {
 
 function compareText(a: string, b: string): number {
   return a.localeCompare(b, undefined, { sensitivity: "base" });
+}
+
+export function getJobCity(job: JobRecord): string {
+  return job.locationCity || splitJobLocation(job.location || "").city;
+}
+
+export function getJobProvince(job: JobRecord): string {
+  return job.locationProvince || splitJobLocation(job.location || "").province;
 }
 
 function getRelevanceKey(job: JobRecord): keyof typeof relevanceRank {
@@ -153,8 +163,10 @@ function compareByField(a: JobRecord, b: JobRecord, field: JobSortField): number
       return compareText(a.title, b.title);
     case "company":
       return compareText(a.company || "", b.company || "");
-    case "location":
-      return compareText(a.location || "", b.location || "");
+    case "city":
+      return compareText(getJobCity(a), getJobCity(b));
+    case "province":
+      return compareText(getJobProvince(a), getJobProvince(b));
     case "relevance":
       return relevanceRank[getRelevanceKey(a)] - relevanceRank[getRelevanceKey(b)];
     case "explanation":

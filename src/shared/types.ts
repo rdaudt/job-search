@@ -149,6 +149,8 @@ export type JobRecord = {
   title: string;
   company: string;
   location: string;
+  locationCity: string;
+  locationProvince: string;
   summary: string | null;
   firstCapturedAt: string;
   lastSeenAt: string;
