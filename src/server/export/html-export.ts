@@ -29,11 +29,12 @@ function getExportProvince(job: JobRecord): string {
 function renderRow(job: JobRecord, index: number): string {
   const city = getExportCity(job);
   const province = getExportProvince(job);
+  const relevance = job.effectiveRelevanceLabel === "relevant" ? "Relevant" : job.effectiveRelevanceLabel === "borderline" ? "Borderline" : job.effectiveRelevanceStatus === "pending" ? "Pending AI review" : job.effectiveRelevanceStatus === "failed" ? "AI failed" : job.effectiveRelevanceStatus === "unreviewed" ? "Unreviewed" : "Irrelevant";
   const titleSort = escapeHtml(job.title.toLowerCase());
   const companySort = escapeHtml((job.company || "").toLowerCase());
   const citySort = escapeHtml(city.toLowerCase());
   const provinceSort = escapeHtml(province.toLowerCase());
-  const relevanceSort = escapeHtml((job.effectiveRelevanceLabel || "").toLowerCase());
+  const relevanceSort = escapeHtml(relevance.toLowerCase());
   const explanationSort = escapeHtml((job.effectiveRelevanceExplanation || "").toLowerCase());
   const searchesSort = escapeHtml(job.matchingSearchProfiles.join(", ").toLowerCase());
   const runLocationsSort = escapeHtml(job.matchingRunLocations.join(", ").toLowerCase());
@@ -54,7 +55,7 @@ function renderRow(job: JobRecord, index: number): string {
       <td>${escapeHtml(job.company || "Unknown")}</td>
       <td>${escapeHtml(city || "Unknown")}</td>
       <td>${escapeHtml(province || "Unknown")}</td>
-      <td>${escapeHtml(job.effectiveRelevanceLabel === "relevant" ? "Relevant" : "Relevant")}</td>
+      <td>${escapeHtml(relevance)}</td>
       <td class="explanation-cell">${escapeHtml(job.effectiveRelevanceExplanation || "")}</td>
       <td>${escapeHtml(job.matchingSearchProfiles.join(", ") || "Unknown")}</td>
       <td>${escapeHtml(job.matchingRunLocations.join(", ") || "Any")}</td>

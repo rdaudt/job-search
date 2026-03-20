@@ -52,6 +52,7 @@ describe("HTML export", () => {
     expect(html).toContain("href=\"https://ca.indeed.com/viewjob?jk=job-1\"");
     expect(html).toContain("Strong title match for a coaching role.");
     expect(html).toContain(">1</td>");
+    expect(html).toContain(">Relevant</td>");
   });
 
   it("renders an empty state when there are no relevant jobs to export", () => {

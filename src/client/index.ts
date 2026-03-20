@@ -1,18 +1,22 @@
 import type { AiReviewSummary, AppSummary, JobRecord, JobStatus, PersistedSearchProfile, RunRecord, RunTarget } from "../shared/types.js";
 import {
+  applyColumnFilters,
+  countActiveColumnFilters,
   EXPLANATION_PREVIEW_LENGTH,
+  filterableJobFields,
   getDefaultSortDirection,
+  getDistinctFilterOptions,
+  getJobFilterValues,
   getJobCity,
   getJobProvince,
   getRelevanceExplanation,
   getRelevanceExplanationPreview,
   getRelevanceFlagStatus,
   jobSortFields,
-  matchesRelevanceFilter,
-  relevanceFilterValues,
   sortJobs,
+  type ActiveColumnFilters,
+  type FilterableJobField,
   type JobSortField,
-  type RelevanceFilterValue,
   type SortDirection
 } from "./job-table.js";
 
@@ -50,7 +54,12 @@ const aiReviewBarFill = document.querySelector<HTMLElement>("#ai-review-bar-fill
 const aiReviewCounts = document.querySelector<HTMLElement>("#ai-review-counts");
 const aiReviewUpdated = document.querySelector<HTMLElement>("#ai-review-updated");
 const jobsBody = document.querySelector<HTMLElement>("#jobs-body");
-const relevanceFilterInput = document.querySelector<HTMLSelectElement>("#relevance-filter");
+const toggleColumnFiltersButton = document.querySelector<HTMLButtonElement>("#toggle-column-filters");
+const clearColumnFiltersButton = document.querySelector<HTMLButtonElement>("#clear-column-filters");
+const columnFilterCount = document.querySelector<HTMLElement>("#column-filter-count");
+const columnFilterButtons = document.querySelectorAll<HTMLButtonElement>(".column-filter-button");
+const columnFilterPopover = document.querySelector<HTMLElement>("#column-filter-popover");
+const exportAppButton = document.querySelector<HTMLButtonElement>("#export-app");
 const toast = document.querySelector<HTMLElement>("#toast");
 const sortButtons = document.querySelectorAll<HTMLButtonElement>(".sort-button");
 const SUMMARY_REFRESH_INTERVAL_MS = 4000;
@@ -63,15 +72,15 @@ const SEARCH_LAUNCH_DELAY_STORAGE_KEY = "job-search-finder-search-launch-delay";
 const SEARCH_LAUNCH_JITTER_STORAGE_KEY = "job-search-finder-search-launch-jitter";
 const PAGE_DELAY_STORAGE_KEY = "job-search-finder-page-delay";
 const PAGE_DELAY_JITTER_STORAGE_KEY = "job-search-finder-page-delay-jitter";
-const RELEVANCE_FILTER_STORAGE_KEY = "job-search-finder-relevance-filter";
 const JOB_SORT_FIELD_STORAGE_KEY = "job-search-finder-job-sort-field";
 const JOB_SORT_DIRECTION_STORAGE_KEY = "job-search-finder-job-sort-direction";
+const COLUMN_FILTERS_ENABLED_STORAGE_KEY = "job-search-finder-column-filters-enabled";
+const COLUMN_FILTERS_STORAGE_KEY = "job-search-finder-column-filters";
 
 let isLoadingSummary = false;
 let pendingSummaryReload = false;
 let previousJobCount = 0;
 let hasLoadedSummary = false;
-let currentRelevanceFilter: RelevanceFilterValue = "all";
 let currentSortField: JobSortField = "relevance";
 let currentSortDirection: SortDirection = "asc";
 let guidanceDraft: string | null = null;
@@ -79,7 +88,12 @@ const overrideDrafts = new Map<number, { relevance: string; note: string }>();
 const expandedExplanationJobIds = new Set<number>();
 let previousAiPendingCount = 0;
 let currentJobs: JobRecord[] = [];
+let currentVisibleJobs: JobRecord[] = [];
 let currentSearchProfiles: PersistedSearchProfile[] = [];
+let isColumnFilterModeEnabled = false;
+let activeColumnFilters: ActiveColumnFilters = {};
+let openColumnFilterField: FilterableJobField | null = null;
+let columnFilterSearchTerm = "";
 
 function showToast(message: string): void {
   if (!toast) {
@@ -88,6 +102,65 @@ function showToast(message: string): void {
   toast.textContent = message;
   toast.classList.remove("hidden");
   window.setTimeout(() => toast.classList.add("hidden"), 2800);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function getColumnFilterLabel(field: FilterableJobField): string {
+  const labels: Record<FilterableJobField, string> = {
+    company: "Company",
+    city: "City",
+    province: "Province",
+    relevance: "Relevance flag/status",
+    searches: "Searches",
+    runLocations: "Run locations"
+  };
+  return labels[field];
+}
+
+function serializeColumnFilters(filters: ActiveColumnFilters): string {
+  const normalized = filterableJobFields.reduce<ActiveColumnFilters>((result, field) => {
+    const values = (filters[field] ?? []).map((value) => value.trim()).filter(Boolean);
+    if (values.length) {
+      result[field] = [...new Set(values)];
+    }
+    return result;
+  }, {});
+  return JSON.stringify(normalized);
+}
+
+function parseStoredColumnFilters(raw: string | null): ActiveColumnFilters {
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return filterableJobFields.reduce<ActiveColumnFilters>((result, field) => {
+      const values = parsed[field];
+      if (!Array.isArray(values)) {
+        return result;
+      }
+      const cleaned = values.map((value) => String(value).trim()).filter(Boolean);
+      if (cleaned.length) {
+        result[field] = [...new Set(cleaned)];
+      }
+      return result;
+    }, {});
+  } catch {
+    return {};
+  }
+}
+
+function getFilteredJobs(jobs: JobRecord[]): JobRecord[] {
+  return isColumnFilterModeEnabled ? applyColumnFilters(jobs, activeColumnFilters) : jobs;
 }
 
 function parseRunLocations(raw: string): string[] {
@@ -251,6 +324,163 @@ function renderSortIndicators(): void {
   });
 }
 
+function closeColumnFilterPopover(): void {
+  openColumnFilterField = null;
+  columnFilterSearchTerm = "";
+  if (columnFilterPopover) {
+    columnFilterPopover.classList.add("hidden");
+    columnFilterPopover.innerHTML = "";
+    columnFilterPopover.style.removeProperty("left");
+    columnFilterPopover.style.removeProperty("top");
+  }
+}
+
+function renderColumnFilterToolbar(): void {
+  const activeCount = countActiveColumnFilters(activeColumnFilters);
+  if (toggleColumnFiltersButton) {
+    toggleColumnFiltersButton.classList.toggle("is-active", isColumnFilterModeEnabled);
+    toggleColumnFiltersButton.textContent = "Column filters";
+  }
+  if (clearColumnFiltersButton) {
+    clearColumnFiltersButton.disabled = activeCount === 0;
+  }
+  if (columnFilterCount) {
+    columnFilterCount.textContent = `${activeCount} active`;
+    columnFilterCount.classList.toggle("hidden", activeCount === 0);
+  }
+}
+
+function renderColumnFilterButtons(): void {
+  const activeCount = countActiveColumnFilters(activeColumnFilters);
+  columnFilterButtons.forEach((button) => {
+    const field = button.dataset.filterField as FilterableJobField | undefined;
+    if (!field || !filterableJobFields.includes(field)) {
+      return;
+    }
+
+    const fieldCount = activeColumnFilters[field]?.length ?? 0;
+    button.classList.toggle("hidden", !isColumnFilterModeEnabled);
+    button.classList.toggle("is-active", openColumnFilterField === field || fieldCount > 0);
+    button.setAttribute("aria-pressed", openColumnFilterField === field ? "true" : "false");
+    const badge = button.querySelector<HTMLElement>(`.filter-badge[data-filter-badge-for="${field}"]`);
+    if (badge) {
+      badge.textContent = String(fieldCount);
+      badge.classList.toggle("hidden", fieldCount === 0);
+    }
+  });
+
+  if (!isColumnFilterModeEnabled && activeCount >= 0) {
+    closeColumnFilterPopover();
+  }
+}
+
+function renderColumnFilterPopover(): void {
+  if (!columnFilterPopover || !openColumnFilterField || !isColumnFilterModeEnabled) {
+    closeColumnFilterPopover();
+    return;
+  }
+
+  const anchor = document.querySelector<HTMLButtonElement>(`.column-filter-button[data-filter-field="${openColumnFilterField}"]`);
+  if (!anchor) {
+    closeColumnFilterPopover();
+    return;
+  }
+
+  const options = getDistinctFilterOptions(currentJobs, activeColumnFilters, openColumnFilterField).filter((option) =>
+    option.value.toLowerCase().includes(columnFilterSearchTerm.trim().toLowerCase()),
+  );
+  const selectedCount = activeColumnFilters[openColumnFilterField]?.length ?? 0;
+  const optionMarkup = options.length
+    ? options
+        .map(
+          (option) => `
+            <label class="column-filter-option">
+              <input type="checkbox" data-filter-option="${escapeHtml(option.value)}" ${option.selected ? "checked" : ""} />
+              <span class="column-filter-option-label">${escapeHtml(option.value)}</span>
+              <span class="column-filter-option-count">${option.count}</span>
+            </label>
+          `,
+        )
+        .join("")
+    : `<p class="column-filter-empty">No values match this search.</p>`;
+
+  columnFilterPopover.innerHTML = `
+    <div class="column-filter-popover-header">
+      <strong>${escapeHtml(getColumnFilterLabel(openColumnFilterField))}</strong>
+      <button class="column-filter-close" type="button" aria-label="Close filter">&times;</button>
+    </div>
+    <input id="column-filter-search" class="column-filter-search" type="text" placeholder="Search values" value="${escapeHtml(columnFilterSearchTerm)}" />
+    <div class="column-filter-actions">
+      <button id="column-filter-select-all" class="secondary-button compact-button" type="button">Select all</button>
+      <button id="column-filter-clear" class="secondary-button compact-button" type="button" ${selectedCount === 0 ? "disabled" : ""}>Clear</button>
+    </div>
+    <div class="column-filter-options">${optionMarkup}</div>
+  `;
+  columnFilterPopover.classList.remove("hidden");
+
+  const rect = anchor.getBoundingClientRect();
+  const popoverWidth = 320;
+  const left = Math.min(Math.max(12, rect.right - popoverWidth), Math.max(12, window.innerWidth - popoverWidth - 12));
+  const estimatedHeight = 340;
+  const top = rect.bottom + 8 + estimatedHeight <= window.innerHeight ? rect.bottom + 8 : Math.max(12, rect.top - estimatedHeight - 8);
+  columnFilterPopover.style.left = `${left}px`;
+  columnFilterPopover.style.top = `${top}px`;
+
+  const searchInput = columnFilterPopover.querySelector<HTMLInputElement>("#column-filter-search");
+  searchInput?.focus({ preventScroll: true });
+  searchInput?.addEventListener("input", () => {
+    columnFilterSearchTerm = searchInput.value;
+    renderColumnFilterPopover();
+  });
+
+  columnFilterPopover.querySelector<HTMLButtonElement>(".column-filter-close")?.addEventListener("click", () => {
+    closeColumnFilterPopover();
+    renderColumnFilterButtons();
+  });
+
+  columnFilterPopover.querySelector<HTMLButtonElement>("#column-filter-select-all")?.addEventListener("click", () => {
+    activeColumnFilters[openColumnFilterField] = options.map((option) => option.value);
+    localStorage.setItem(COLUMN_FILTERS_STORAGE_KEY, serializeColumnFilters(activeColumnFilters));
+    renderColumnFilterToolbar();
+    renderColumnFilterButtons();
+    renderColumnFilterPopover();
+    renderJobs(currentJobs);
+  });
+
+  columnFilterPopover.querySelector<HTMLButtonElement>("#column-filter-clear")?.addEventListener("click", () => {
+    delete activeColumnFilters[openColumnFilterField];
+    localStorage.setItem(COLUMN_FILTERS_STORAGE_KEY, serializeColumnFilters(activeColumnFilters));
+    renderColumnFilterToolbar();
+    renderColumnFilterButtons();
+    renderColumnFilterPopover();
+    renderJobs(currentJobs);
+  });
+
+  columnFilterPopover.querySelectorAll<HTMLInputElement>("input[type='checkbox'][data-filter-option]").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      const selectedValues = new Set(activeColumnFilters[openColumnFilterField] ?? []);
+      const rawValue = checkbox.dataset.filterOption ?? "";
+      if (checkbox.checked) {
+        selectedValues.add(rawValue);
+      } else {
+        selectedValues.delete(rawValue);
+      }
+
+      if (selectedValues.size) {
+        activeColumnFilters[openColumnFilterField] = [...selectedValues];
+      } else {
+        delete activeColumnFilters[openColumnFilterField];
+      }
+
+      localStorage.setItem(COLUMN_FILTERS_STORAGE_KEY, serializeColumnFilters(activeColumnFilters));
+      renderColumnFilterToolbar();
+      renderColumnFilterButtons();
+      renderColumnFilterPopover();
+      renderJobs(currentJobs);
+    });
+  });
+}
+
 function renderRunModeControls(): void {
   const mode = runModeInput?.value ?? "fixed";
   const isAuto = mode === "auto";
@@ -346,12 +576,11 @@ function renderJobs(jobs: JobRecord[]): void {
   }
 
   currentJobs = jobs;
-
-  const visibleJobs = sortJobs(
-    jobs.filter((job) => matchesRelevanceFilter(job, currentRelevanceFilter)),
-    currentSortField,
-    currentSortDirection
-  );
+  const visibleJobs = sortJobs(getFilteredJobs(jobs), currentSortField, currentSortDirection);
+  currentVisibleJobs = visibleJobs;
+  renderColumnFilterToolbar();
+  renderColumnFilterButtons();
+  renderColumnFilterPopover();
 
   if (!visibleJobs.length) {
     jobsBody.innerHTML = `<tr><td colspan="12" class="empty-cell">No jobs match the current filter.</td></tr>`;
@@ -549,6 +778,41 @@ function bindOverrideEditors(): void {
   });
 }
 
+async function exportVisibleJobs(): Promise<void> {
+  const visibleRelevantJobIds = currentVisibleJobs
+    .filter((job) => job.effectiveRelevanceLabel === "relevant")
+    .map((job) => job.id);
+
+  if (!visibleRelevantJobIds.length) {
+    showToast("No relevant visible jobs to export.");
+    return;
+  }
+
+  const response = await fetch("/api/jobs/export.html", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ jobIds: visibleRelevantJobIds })
+  });
+
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({ error: "Could not export app snapshot." }))) as { error?: string };
+    showToast(error.error ?? "Could not export app snapshot.");
+    return;
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "jobs-app.html";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function loadSummary(): Promise<void> {
   if (isLoadingSummary) {
     pendingSummaryReload = true;
@@ -693,13 +957,52 @@ rereviewJobsButton?.addEventListener("click", async () => {
   await loadSummary();
 });
 
-relevanceFilterInput?.addEventListener("change", () => {
-  const nextFilter = relevanceFilterValues.includes((relevanceFilterInput.value as RelevanceFilterValue))
-    ? (relevanceFilterInput.value as RelevanceFilterValue)
-    : "all";
-  currentRelevanceFilter = nextFilter;
-  localStorage.setItem(RELEVANCE_FILTER_STORAGE_KEY, nextFilter);
-  void loadSummary();
+toggleColumnFiltersButton?.addEventListener("click", () => {
+  isColumnFilterModeEnabled = !isColumnFilterModeEnabled;
+  localStorage.setItem(COLUMN_FILTERS_ENABLED_STORAGE_KEY, isColumnFilterModeEnabled ? "true" : "false");
+  if (!isColumnFilterModeEnabled) {
+    closeColumnFilterPopover();
+  }
+  renderColumnFilterToolbar();
+  renderColumnFilterButtons();
+  renderJobs(currentJobs);
+});
+
+clearColumnFiltersButton?.addEventListener("click", () => {
+  activeColumnFilters = {};
+  localStorage.setItem(COLUMN_FILTERS_STORAGE_KEY, serializeColumnFilters(activeColumnFilters));
+  closeColumnFilterPopover();
+  renderColumnFilterToolbar();
+  renderColumnFilterButtons();
+  renderJobs(currentJobs);
+});
+
+columnFilterButtons.forEach((button) => {
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (!isColumnFilterModeEnabled) {
+      return;
+    }
+
+    const field = button.dataset.filterField as FilterableJobField | undefined;
+    if (!field || !filterableJobFields.includes(field)) {
+      return;
+    }
+
+    if (openColumnFilterField === field) {
+      closeColumnFilterPopover();
+    } else {
+      openColumnFilterField = field;
+      columnFilterSearchTerm = "";
+    }
+
+    renderColumnFilterButtons();
+    renderColumnFilterPopover();
+  });
+});
+
+exportAppButton?.addEventListener("click", () => {
+  void exportVisibleJobs();
 });
 
 sortButtons.forEach((button) => {
@@ -808,14 +1111,8 @@ if (pageDelayJitterInput) {
   pageDelayJitterInput.value = localStorage.getItem(PAGE_DELAY_JITTER_STORAGE_KEY) ?? "12000";
 }
 
-if (relevanceFilterInput) {
-  const storedFilter = localStorage.getItem(RELEVANCE_FILTER_STORAGE_KEY);
-  currentRelevanceFilter =
-    storedFilter && relevanceFilterValues.includes(storedFilter as RelevanceFilterValue)
-      ? (storedFilter as RelevanceFilterValue)
-      : "all";
-  relevanceFilterInput.value = currentRelevanceFilter;
-}
+isColumnFilterModeEnabled = localStorage.getItem(COLUMN_FILTERS_ENABLED_STORAGE_KEY) === "true";
+activeColumnFilters = parseStoredColumnFilters(localStorage.getItem(COLUMN_FILTERS_STORAGE_KEY));
 
 {
   const storedSortField = localStorage.getItem(JOB_SORT_FIELD_STORAGE_KEY);
@@ -833,6 +1130,8 @@ if (relevanceFilterInput) {
 renderRunModeControls();
 renderSortIndicators();
 renderRunSummary();
+renderColumnFilterToolbar();
+renderColumnFilterButtons();
 
 void loadSummary();
 window.setInterval(() => {
@@ -846,5 +1145,35 @@ window.addEventListener("focus", () => {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     void loadSummary();
+  }
+});
+
+document.addEventListener("click", (event) => {
+  const target = event.target as Node | null;
+  if (!target) {
+    return;
+  }
+  if (columnFilterPopover?.contains(target)) {
+    return;
+  }
+  if ((target as HTMLElement).closest?.(".column-filter-button")) {
+    return;
+  }
+  if (openColumnFilterField) {
+    closeColumnFilterPopover();
+    renderColumnFilterButtons();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && openColumnFilterField) {
+    closeColumnFilterPopover();
+    renderColumnFilterButtons();
+  }
+});
+
+window.addEventListener("resize", () => {
+  if (openColumnFilterField) {
+    renderColumnFilterPopover();
   }
 });

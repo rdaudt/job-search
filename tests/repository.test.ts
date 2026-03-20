@@ -186,6 +186,68 @@ describe("Repository", () => {
     expect(exportJobs[0].title).toBe("Fitness Coach");
   });
 
+  it("exports only the selected visible relevant jobs in the requested order", () => {
+    const repository = createRepository();
+    repository.replaceSearchProfiles([
+      {
+        id: "fitness",
+        name: "Fitness",
+        keywords: "fitness coach",
+        location: "",
+        remote: true
+      }
+    ]);
+    const searches = repository.listSearchProfiles();
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
+      runMode: "fixed",
+      maxPages: 1,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
+
+    repository.ingestCapture({
+      source: "indeed",
+      runTargetId: targets[0].id,
+      pageUrl: "https://ca.indeed.com/jobs?q=fitness+coach",
+      listings: [
+        {
+          sourceJobId: "jk-fit",
+          url: "https://ca.indeed.com/viewjob?jk=jk-fit",
+          title: "Fitness Coach",
+          company: "Acme",
+          location: "Remote"
+        },
+        {
+          sourceJobId: "jk-lead",
+          url: "https://ca.indeed.com/viewjob?jk=jk-lead",
+          title: "Fitness Manager",
+          company: "Club",
+          location: "Remote"
+        },
+        {
+          sourceJobId: "jk-nope",
+          url: "https://ca.indeed.com/viewjob?jk=jk-nope",
+          title: "PT Steward",
+          company: "Other",
+          location: "Remote"
+        }
+      ]
+    });
+
+    const jobs = repository.listJobs();
+    repository.setJobRelevanceOverride(jobs[0].id, "relevant", "In scope.");
+    repository.setJobRelevanceOverride(jobs[1].id, "relevant", "Also in scope.");
+    repository.setJobRelevanceOverride(jobs[2].id, "irrelevant", "Wrong role.");
+
+    const exportJobs = repository.listRelevantJobsForExportByIds([jobs[1].id, jobs[2].id, jobs[0].id]);
+    expect(exportJobs.map((job) => job.id)).toEqual([jobs[1].id, jobs[0].id]);
+  });
+
   it("keeps remote listings for remote profiles scoped to a city", () => {
     const repository = createRepository();
     repository.replaceSearchProfiles([

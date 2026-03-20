@@ -3,6 +3,7 @@ import path from "node:path";
 import cors from "cors";
 import express from "express";
 import multer from "multer";
+import { z } from "zod";
 import { indeedAdapter } from "../shared/indeed.js";
 import {
   capturePayloadSchema,
@@ -61,6 +62,9 @@ const MAX_ZERO_NEW_JOBS_THRESHOLD = 5;
 const MIN_ZERO_NEW_JOBS_THRESHOLD = 1;
 const EMERGENCY_MAX_PAGES = DEFAULT_EMERGENCY_MAX_PAGES;
 const MAX_DELAY_MS = 120_000;
+const exportJobIdsSchema = z.object({
+  jobIds: z.array(z.number().int().min(1)).default([])
+});
 
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: "1mb" }));
@@ -317,6 +321,20 @@ app.get("/api/jobs/export.html", (_req, res) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader("Content-Disposition", "attachment; filename=\"jobs-app.html\"");
   res.send(html);
+});
+
+app.post("/api/jobs/export.html", (req, res) => {
+  try {
+    const payload = exportJobIdsSchema.parse(req.body ?? {});
+    const html = renderJobsHtmlExport(repository.listRelevantJobsForExportByIds(payload.jobIds), new Date().toISOString());
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Disposition", "attachment; filename=\"jobs-app.html\"");
+    res.send(html);
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : "Could not build filtered app export."
+    });
+  }
 });
 
 app.get("*", (_req, res) => {

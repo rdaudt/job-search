@@ -1059,6 +1059,23 @@ export class Repository {
     return this.listJobs().filter((job) => job.effectiveRelevanceLabel === "relevant");
   }
 
+  listRelevantJobsForExportByIds(jobIds: number[]): JobRecord[] {
+    if (!jobIds.length) {
+      return [];
+    }
+
+    const visibleOrder = new Map<number, number>();
+    jobIds.forEach((jobId, index) => {
+      if (!visibleOrder.has(jobId)) {
+        visibleOrder.set(jobId, index);
+      }
+    });
+
+    return this.listJobs()
+      .filter((job) => job.effectiveRelevanceLabel === "relevant" && visibleOrder.has(job.id))
+      .sort((left, right) => (visibleOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (visibleOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER));
+  }
+
   exportJobsCsv(): string {
     const rows: JobCsvRow[] = this.listJobs().map((job) => ({
       title: job.title,

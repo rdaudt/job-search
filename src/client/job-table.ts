@@ -1,17 +1,23 @@
 import type { JobRecord } from "../shared/types.js";
 import { splitJobLocation } from "../shared/location-utils.js";
 
-export const relevanceFilterValues = [
-  "all",
-  "relevant",
-  "borderline",
-  "irrelevant",
-  "pending",
-  "failed",
-  "unreviewed"
+export const filterableJobFields = [
+  "company",
+  "city",
+  "province",
+  "relevance",
+  "searches",
+  "runLocations"
 ] as const;
 
-export type RelevanceFilterValue = (typeof relevanceFilterValues)[number];
+export type FilterableJobField = (typeof filterableJobFields)[number];
+export type ActiveColumnFilters = Partial<Record<FilterableJobField, string[]>>;
+
+export type FilterOption = {
+  value: string;
+  count: number;
+  selected: boolean;
+};
 
 export const jobSortFields = [
   "title",
@@ -130,24 +136,81 @@ export function getRelevanceExplanationPreview(job: JobRecord, maxLength = EXPLA
   };
 }
 
-export function getRelevanceFilterValue(job: JobRecord): RelevanceFilterValue {
-  if (job.effectiveRelevanceStatus === "pending") {
-    return "pending";
-  }
-  if (job.effectiveRelevanceStatus === "failed") {
-    return "failed";
-  }
-  if (job.effectiveRelevanceStatus === "unreviewed") {
-    return "unreviewed";
-  }
-  return job.effectiveRelevanceLabel ?? "unreviewed";
+function normalizeFilterValue(value: string): string {
+  return value.trim().toLowerCase();
 }
 
-export function matchesRelevanceFilter(job: JobRecord, filter: RelevanceFilterValue): boolean {
-  if (filter === "all") {
-    return true;
+export function getJobFilterValues(job: JobRecord, field: FilterableJobField): string[] {
+  switch (field) {
+    case "company":
+      return [job.company || "Unknown"];
+    case "city":
+      return [getJobCity(job) || "Unknown"];
+    case "province":
+      return [getJobProvince(job) || "Unknown"];
+    case "relevance":
+      return [getRelevanceFlagStatus(job)];
+    case "searches":
+      return job.matchingSearchProfiles.length ? job.matchingSearchProfiles : ["Unknown"];
+    case "runLocations":
+      return job.matchingRunLocations.length ? job.matchingRunLocations : ["Any"];
   }
-  return getRelevanceFilterValue(job) === filter;
+}
+
+export function countActiveColumnFilters(filters: ActiveColumnFilters): number {
+  return filterableJobFields.reduce((count, field) => count + (filters[field]?.length ?? 0), 0);
+}
+
+export function applyColumnFilters(jobs: JobRecord[], filters: ActiveColumnFilters): JobRecord[] {
+  return jobs.filter((job) =>
+    filterableJobFields.every((field) => {
+      const selectedValues = filters[field] ?? [];
+      if (!selectedValues.length) {
+        return true;
+      }
+
+      const normalizedSelections = new Set(selectedValues.map(normalizeFilterValue));
+      return getJobFilterValues(job, field).some((value) => normalizedSelections.has(normalizeFilterValue(value)));
+    }),
+  );
+}
+
+export function getDistinctFilterOptions(
+  jobs: JobRecord[],
+  filters: ActiveColumnFilters,
+  targetField: FilterableJobField,
+): FilterOption[] {
+  const otherFilters: ActiveColumnFilters = { ...filters };
+  delete otherFilters[targetField];
+  const baseRows = applyColumnFilters(jobs, otherFilters);
+  const counts = new Map<string, { value: string; count: number }>();
+
+  for (const job of baseRows) {
+    for (const value of getJobFilterValues(job, targetField)) {
+      const key = normalizeFilterValue(value);
+      const current = counts.get(key);
+      if (current) {
+        current.count += 1;
+      } else {
+        counts.set(key, { value, count: 1 });
+      }
+    }
+  }
+
+  for (const selected of filters[targetField] ?? []) {
+    const key = normalizeFilterValue(selected);
+    if (!counts.has(key)) {
+      counts.set(key, { value: selected, count: 0 });
+    }
+  }
+
+  return [...counts.values()]
+    .sort((a, b) => compareText(a.value, b.value))
+    .map((entry) => ({
+      value: entry.value,
+      count: entry.count,
+      selected: (filters[targetField] ?? []).some((selected) => normalizeFilterValue(selected) === normalizeFilterValue(entry.value))
+    }));
 }
 
 export function getDefaultSortDirection(field: JobSortField): SortDirection {

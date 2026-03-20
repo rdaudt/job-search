@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { JobRecord } from "../src/shared/types.js";
 import {
+  applyColumnFilters,
+  countActiveColumnFilters,
   EXPLANATION_PREVIEW_LENGTH,
   getDefaultSortDirection,
+  getDistinctFilterOptions,
   getJobCity,
+  getJobFilterValues,
   getJobProvince,
   getRelevanceExplanation,
   getRelevanceExplanationPreview,
-  getRelevanceFilterValue,
   getRelevanceFlagStatus,
-  matchesRelevanceFilter,
   sortJobs
 } from "../src/client/job-table.js";
 
@@ -87,7 +89,7 @@ describe("job table helpers", () => {
     ).toBe("Not sent for AI review");
   });
 
-  it("filters by derived relevance state", () => {
+  it("returns filter values for the supported columns", () => {
     const irrelevant = buildJob({
       relevanceStatus: "complete",
       relevanceLabel: "irrelevant",
@@ -97,9 +99,12 @@ describe("job table helpers", () => {
       effectiveRelevanceExplanation: "Wrong domain"
     });
 
-    expect(getRelevanceFilterValue(irrelevant)).toBe("irrelevant");
-    expect(matchesRelevanceFilter(irrelevant, "irrelevant")).toBe(true);
-    expect(matchesRelevanceFilter(irrelevant, "relevant")).toBe(false);
+    expect(getJobFilterValues(irrelevant, "company")).toEqual(["Acme"]);
+    expect(getJobFilterValues(irrelevant, "city")).toEqual(["Vancouver"]);
+    expect(getJobFilterValues(irrelevant, "province")).toEqual(["BC"]);
+    expect(getJobFilterValues(irrelevant, "relevance")).toEqual(["Irrelevant"]);
+    expect(getJobFilterValues(irrelevant, "searches")).toEqual(["Fitness"]);
+    expect(getJobFilterValues(irrelevant, "runLocations")).toEqual(["Vancouver, BC"]);
   });
 
   it("sorts by relevance first and last seen descending as tie-breaker", () => {
@@ -182,5 +187,73 @@ describe("job table helpers", () => {
 
     expect(preview.isTruncated).toBe(true);
     expect(preview.text).toBe(`${"A".repeat(EXPLANATION_PREVIEW_LENGTH)}\u2026`);
+  });
+
+  it("applies cascading column filters with match-any behavior for multi-value columns", () => {
+    const jobs = [
+      buildJob({
+        id: 1,
+        company: "Acme",
+        location: "Vancouver, BC",
+        locationCity: "Vancouver",
+        locationProvince: "BC",
+        matchingSearchProfiles: ["Fitness", "Leadership"],
+        matchingRunLocations: ["Vancouver, BC"],
+        effectiveRelevanceStatus: "complete",
+        effectiveRelevanceLabel: "relevant"
+      }),
+      buildJob({
+        id: 2,
+        company: "Acme",
+        location: "Burnaby, BC",
+        locationCity: "Burnaby",
+        locationProvince: "BC",
+        matchingSearchProfiles: ["Leadership"],
+        matchingRunLocations: ["Burnaby, BC"],
+        effectiveRelevanceStatus: "complete",
+        effectiveRelevanceLabel: "borderline",
+        effectiveRelevanceExplanation: "Borderline"
+      }),
+      buildJob({
+        id: 3,
+        company: "North Shore",
+        location: "Toronto, ON",
+        locationCity: "Toronto",
+        locationProvince: "ON",
+        matchingSearchProfiles: ["Fitness"],
+        matchingRunLocations: ["Toronto, ON"],
+        effectiveRelevanceStatus: "failed",
+        effectiveRelevanceLabel: null,
+        effectiveRelevanceExplanation: null
+      })
+    ];
+
+    const filtered = applyColumnFilters(jobs, {
+      company: ["Acme"],
+      searches: ["Leadership"]
+    });
+
+    expect(filtered.map((job) => job.id)).toEqual([1, 2]);
+    expect(countActiveColumnFilters({ company: ["Acme"], searches: ["Leadership"] })).toBe(2);
+
+    const companyOptions = getDistinctFilterOptions(
+      jobs,
+      {
+        province: ["BC"]
+      },
+      "company"
+    );
+    expect(companyOptions).toEqual([
+      { value: "Acme", count: 2, selected: false }
+    ]);
+
+    const relevanceOptions = getDistinctFilterOptions(
+      jobs,
+      {
+        company: ["Acme"]
+      },
+      "relevance"
+    );
+    expect(relevanceOptions.map((option) => option.value)).toEqual(["Borderline", "Relevant"]);
   });
 });
