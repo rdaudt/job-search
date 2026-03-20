@@ -240,20 +240,39 @@
             <button id="toggle-column-filters" class="secondary-button" type="button">Column filters</button>
             <button id="clear-column-filters" class="secondary-button" type="button">Clear filters</button>
             <span id="column-filter-count" class="filter-count hidden">0 active</span>
-            <button class="column-filter-button toolbar-filter hidden" type="button" data-filter-field="searches" aria-label="Filter Searches">
-              <span>Searches</span>
-              <span class="filter-badge hidden" data-filter-badge-for="searches">0</span>
-            </button>
-            <button class="column-filter-button toolbar-filter hidden" type="button" data-filter-field="runLocations" aria-label="Filter Run Locations">
-              <span>Run locations</span>
-              <span class="filter-badge hidden" data-filter-badge-for="runLocations">0</span>
-            </button>
           </div>
           <div class="export-actions">
             <button id="export-app" class="secondary-button" type="button">Export App</button>
             <a href="/api/jobs/export.csv">Export CSV</a>
           </div>
         </div>
+        <div id="column-filter-bar" class="column-filter-bar hidden">
+          <button class="column-filter-button hidden" type="button" data-filter-field="company" aria-label="Filter Company">
+            <span>Company</span>
+            <span class="filter-badge hidden" data-filter-badge-for="company">0</span>
+          </button>
+          <button class="column-filter-button hidden" type="button" data-filter-field="city" aria-label="Filter City">
+            <span>City</span>
+            <span class="filter-badge hidden" data-filter-badge-for="city">0</span>
+          </button>
+          <button class="column-filter-button hidden" type="button" data-filter-field="province" aria-label="Filter Province">
+            <span>Province</span>
+            <span class="filter-badge hidden" data-filter-badge-for="province">0</span>
+          </button>
+          <button class="column-filter-button hidden" type="button" data-filter-field="relevance" aria-label="Filter Relevance Flag or Status">
+            <span>Relevance</span>
+            <span class="filter-badge hidden" data-filter-badge-for="relevance">0</span>
+          </button>
+          <button class="column-filter-button hidden" type="button" data-filter-field="searches" aria-label="Filter Searches">
+            <span>Searches</span>
+            <span class="filter-badge hidden" data-filter-badge-for="searches">0</span>
+          </button>
+          <button class="column-filter-button hidden" type="button" data-filter-field="runLocations" aria-label="Filter Run Locations">
+            <span>Run locations</span>
+            <span class="filter-badge hidden" data-filter-badge-for="runLocations">0</span>
+          </button>
+        </div>
+        <div id="column-filter-popover" class="column-filter-popover hidden" role="dialog" aria-modal="false"></div>
         <div class="review-layout">
           <div class="review-master">
             <div class="table-wrap">
@@ -262,42 +281,10 @@
                   <tr>
                     <th>#</th>
                     <th><button class="sort-button" type="button" data-sort-field="title">Title</button></th>
-                    <th>
-                      <div class="column-header">
-                        <button class="sort-button" type="button" data-sort-field="company">Company</button>
-                        <button class="column-filter-button hidden" type="button" data-filter-field="company" aria-label="Filter Company">
-                          <span aria-hidden="true">&#x1F5D0;</span>
-                          <span class="filter-badge hidden" data-filter-badge-for="company">0</span>
-                        </button>
-                      </div>
-                    </th>
-                    <th>
-                      <div class="column-header">
-                        <button class="sort-button" type="button" data-sort-field="city">City</button>
-                        <button class="column-filter-button hidden" type="button" data-filter-field="city" aria-label="Filter City">
-                          <span aria-hidden="true">&#x1F5D0;</span>
-                          <span class="filter-badge hidden" data-filter-badge-for="city">0</span>
-                        </button>
-                      </div>
-                    </th>
-                    <th>
-                      <div class="column-header">
-                        <button class="sort-button" type="button" data-sort-field="province">Province</button>
-                        <button class="column-filter-button hidden" type="button" data-filter-field="province" aria-label="Filter Province">
-                          <span aria-hidden="true">&#x1F5D0;</span>
-                          <span class="filter-badge hidden" data-filter-badge-for="province">0</span>
-                        </button>
-                      </div>
-                    </th>
-                    <th>
-                      <div class="column-header">
-                        <button class="sort-button" type="button" data-sort-field="relevance">Relevance</button>
-                        <button class="column-filter-button hidden" type="button" data-filter-field="relevance" aria-label="Filter Relevance Flag or Status">
-                          <span aria-hidden="true">&#x1F5D0;</span>
-                          <span class="filter-badge hidden" data-filter-badge-for="relevance">0</span>
-                        </button>
-                      </div>
-                    </th>
+                    <th><button class="sort-button" type="button" data-sort-field="company">Company</button></th>
+                    <th><button class="sort-button" type="button" data-sort-field="city">City</button></th>
+                    <th><button class="sort-button" type="button" data-sort-field="province">Province</button></th>
+                    <th><button class="sort-button" type="button" data-sort-field="relevance">Relevance</button></th>
                   </tr>
                 </thead>
                 <tbody id="jobs-body">
@@ -310,7 +297,6 @@
           </div>
           <aside id="job-detail" class="job-detail empty-state">Select a job to review its details.</aside>
         </div>
-        <div id="column-filter-popover" class="column-filter-popover hidden" role="dialog" aria-modal="false"></div>
       </section>
 
       <div id="toast" class="toast hidden" aria-live="polite"></div>

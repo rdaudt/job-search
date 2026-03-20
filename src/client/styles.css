@@ -385,6 +385,13 @@ a {
   margin-bottom: 14px;
 }
 
+.column-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
 .review-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
@@ -666,9 +673,8 @@ tbody tr:last-child td {
 }
 
 .column-filter-popover {
-  position: fixed;
-  z-index: 20;
-  width: min(320px, calc(100vw - 24px));
+  width: min(420px, 100%);
+  margin: 0 0 16px;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 18px;

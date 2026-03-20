@@ -55,6 +55,7 @@ const jobDetail = document.querySelector<HTMLElement>("#job-detail");
 const toggleColumnFiltersButton = document.querySelector<HTMLButtonElement>("#toggle-column-filters");
 const clearColumnFiltersButton = document.querySelector<HTMLButtonElement>("#clear-column-filters");
 const columnFilterCount = document.querySelector<HTMLElement>("#column-filter-count");
+const columnFilterBar = document.querySelector<HTMLElement>("#column-filter-bar");
 const columnFilterButtons = document.querySelectorAll<HTMLButtonElement>(".column-filter-button");
 const columnFilterPopover = document.querySelector<HTMLElement>("#column-filter-popover");
 const exportAppButton = document.querySelector<HTMLButtonElement>("#export-app");
@@ -92,6 +93,7 @@ let activeColumnFilters: ActiveColumnFilters = {};
 let openColumnFilterField: FilterableJobField | null = null;
 let columnFilterSearchTerm = "";
 let selectedJobId: number | null = null;
+let shouldFocusColumnFilterSearch = false;
 
 function showToast(message: string): void {
   if (!toast) {
@@ -323,11 +325,10 @@ function renderSortIndicators(): void {
 function closeColumnFilterPopover(): void {
   openColumnFilterField = null;
   columnFilterSearchTerm = "";
+  shouldFocusColumnFilterSearch = false;
   if (columnFilterPopover) {
     columnFilterPopover.classList.add("hidden");
     columnFilterPopover.innerHTML = "";
-    columnFilterPopover.style.removeProperty("left");
-    columnFilterPopover.style.removeProperty("top");
   }
 }
 
@@ -348,6 +349,9 @@ function renderColumnFilterToolbar(): void {
 
 function renderColumnFilterButtons(): void {
   const activeCount = countActiveColumnFilters(activeColumnFilters);
+  if (columnFilterBar) {
+    columnFilterBar.classList.toggle("hidden", !isColumnFilterModeEnabled);
+  }
   columnFilterButtons.forEach((button) => {
     const field = button.dataset.filterField as FilterableJobField | undefined;
     if (!field || !filterableJobFields.includes(field)) {
@@ -375,12 +379,8 @@ function renderColumnFilterPopover(): void {
     closeColumnFilterPopover();
     return;
   }
-
-  const anchor = document.querySelector<HTMLButtonElement>(`.column-filter-button[data-filter-field="${openColumnFilterField}"]`);
-  if (!anchor) {
-    closeColumnFilterPopover();
-    return;
-  }
+  const previousActiveIsFilterSearch =
+    document.activeElement instanceof HTMLElement && document.activeElement.id === "column-filter-search";
 
   const options = getDistinctFilterOptions(currentJobs, activeColumnFilters, openColumnFilterField).filter((option) =>
     option.value.toLowerCase().includes(columnFilterSearchTerm.trim().toLowerCase()),
@@ -414,16 +414,12 @@ function renderColumnFilterPopover(): void {
   `;
   columnFilterPopover.classList.remove("hidden");
 
-  const rect = anchor.getBoundingClientRect();
-  const popoverWidth = 320;
-  const left = Math.min(Math.max(12, rect.right - popoverWidth), Math.max(12, window.innerWidth - popoverWidth - 12));
-  const estimatedHeight = 340;
-  const top = rect.bottom + 8 + estimatedHeight <= window.innerHeight ? rect.bottom + 8 : Math.max(12, rect.top - estimatedHeight - 8);
-  columnFilterPopover.style.left = `${left}px`;
-  columnFilterPopover.style.top = `${top}px`;
-
   const searchInput = columnFilterPopover.querySelector<HTMLInputElement>("#column-filter-search");
-  searchInput?.focus({ preventScroll: true });
+  if (searchInput && (shouldFocusColumnFilterSearch || previousActiveIsFilterSearch)) {
+    searchInput.focus({ preventScroll: true });
+    searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
+  }
+  shouldFocusColumnFilterSearch = false;
   searchInput?.addEventListener("input", () => {
     columnFilterSearchTerm = searchInput.value;
     renderColumnFilterPopover();
@@ -1041,6 +1037,7 @@ columnFilterButtons.forEach((button) => {
     } else {
       openColumnFilterField = field;
       columnFilterSearchTerm = "";
+      shouldFocusColumnFilterSearch = true;
     }
 
     renderColumnFilterButtons();
