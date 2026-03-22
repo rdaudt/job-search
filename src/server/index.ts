@@ -267,6 +267,22 @@ app.patch("/api/jobs/:id/status", (req, res) => {
   res.json({ ok: true });
 });
 
+app.delete("/api/jobs/:id", (req, res) => {
+  const jobId = Number(req.params.id);
+  if (!Number.isInteger(jobId)) {
+    res.status(400).json({ error: "Provide a valid job id." });
+    return;
+  }
+
+  const deleted = repository.deleteJob(jobId);
+  if (!deleted) {
+    res.status(404).json({ error: `Job ${jobId} was not found.` });
+    return;
+  }
+
+  res.json({ ok: true });
+});
+
 app.patch("/api/jobs/:id/relevance-override", (req, res) => {
   try {
     const jobId = Number(req.params.id);
@@ -307,6 +323,16 @@ app.post("/api/relevance/rereview", (_req, res) => {
     promptVersion: relevanceClassifier.promptVersion
   });
   res.json({ ok: true });
+});
+
+app.post("/api/maintenance/clear-jobs", (_req, res) => {
+  const result = repository.clearJobsData();
+  res.json({ ok: true, ...result });
+});
+
+app.post("/api/maintenance/clear-all", (_req, res) => {
+  const result = repository.clearAllData();
+  res.json({ ok: true, ...result });
 });
 
 app.get("/api/jobs/export.csv", (_req, res) => {

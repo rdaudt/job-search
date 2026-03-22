@@ -550,15 +550,37 @@ export class Repository {
     this.database.prepare("DELETE FROM job_relevance_overrides WHERE job_id = ?").run(jobId);
   }
 
-  resetCapturedData(): void {
+  deleteJob(jobId: number): boolean {
+    const result = this.database.prepare("DELETE FROM jobs WHERE id = ?").run(jobId);
+    return result.changes > 0;
+  }
+
+  clearJobsData(): { deletedJobs: number } {
     const transaction = this.database.transaction(() => {
-      this.database.prepare("DELETE FROM job_search_matches").run();
-      this.database.prepare("DELETE FROM run_targets").run();
-      this.database.prepare("DELETE FROM jobs").run();
-      this.database.prepare("DELETE FROM runs").run();
+      const result = this.database.prepare("DELETE FROM jobs").run();
+      return {
+        deletedJobs: result.changes
+      };
     });
 
-    transaction();
+    return transaction();
+  }
+
+  clearAllData(): { deletedJobs: number; deletedRuns: number } {
+    const transaction = this.database.transaction(() => {
+      const deletedRuns = this.database.prepare("DELETE FROM runs").run().changes;
+      const deletedJobs = this.database.prepare("DELETE FROM jobs").run().changes;
+      return {
+        deletedJobs,
+        deletedRuns
+      };
+    });
+
+    return transaction();
+  }
+
+  resetCapturedData(): void {
+    this.clearAllData();
   }
 
   queueRelevanceForAllJobs(

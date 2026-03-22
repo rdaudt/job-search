@@ -194,6 +194,17 @@ a.button-link:hover {
   color: var(--accent-strong);
 }
 
+.danger-button {
+  border-color: rgba(157, 2, 8, 0.18);
+  background: rgba(157, 2, 8, 0.06);
+  color: #8f1720;
+}
+
+.danger-button:hover {
+  background: rgba(157, 2, 8, 0.12);
+  color: #7b1220;
+}
+
 a {
   color: var(--accent-strong);
   font-weight: 700;
@@ -779,6 +790,12 @@ tbody tr:last-child td {
   justify-content: space-between;
   align-items: start;
   gap: 16px;
+}
+
+.job-detail-header-actions {
+  display: flex;
+  align-items: start;
+  gap: 12px;
 }
 
 .detail-kicker {

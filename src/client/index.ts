@@ -59,6 +59,8 @@ const columnFilterBar = document.querySelector<HTMLElement>("#column-filter-bar"
 const columnFilterButtons = document.querySelectorAll<HTMLButtonElement>(".column-filter-button");
 const columnFilterPopover = document.querySelector<HTMLElement>("#column-filter-popover");
 const exportAppButton = document.querySelector<HTMLButtonElement>("#export-app");
+const clearJobsButton = document.querySelector<HTMLButtonElement>("#clear-jobs");
+const clearAllButton = document.querySelector<HTMLButtonElement>("#clear-all");
 const toast = document.querySelector<HTMLElement>("#toast");
 const sortButtons = document.querySelectorAll<HTMLButtonElement>(".sort-button");
 const SUMMARY_REFRESH_INTERVAL_MS = 4000;
@@ -603,7 +605,10 @@ function renderJobDetail(job: JobRecord | null): void {
         }
         <p class="job-detail-company">${escapeHtml(company)} | ${escapeHtml(city)}, ${escapeHtml(province)}</p>
       </div>
-      <span class="job-relevance ${job.hasUserOverride ? "user-override" : ""}">${getRelevanceFlagStatus(job)}</span>
+      <div class="job-detail-header-actions">
+        <span class="job-relevance ${job.hasUserOverride ? "user-override" : ""}">${getRelevanceFlagStatus(job)}</span>
+        <button class="secondary-button danger-button delete-job-button" type="button" data-job-id="${job.id}">Delete job</button>
+      </div>
     </div>
     ${summary ? `<p class="job-detail-summary">${escapeHtml(summary)}</p>` : ""}
     <div class="job-detail-section">
@@ -700,6 +705,7 @@ function renderJobs(jobs: JobRecord[]): void {
   bindJobRowSelection();
   bindStatusEditors();
   bindOverrideEditors();
+  bindDeleteEditors();
 }
 
 function bindJobRowSelection(): void {
@@ -819,6 +825,38 @@ function bindOverrideEditors(): void {
 
       overrideDrafts.delete(jobId);
       showToast("Relevance override cleared.");
+      await loadSummary();
+    });
+  });
+}
+
+function bindDeleteEditors(): void {
+  document.querySelectorAll<HTMLButtonElement>(".delete-job-button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const jobId = Number(button.dataset.jobId);
+      const job = currentJobs.find((candidate) => candidate.id === jobId);
+      if (!Number.isInteger(jobId) || !job) {
+        showToast("Could not find that job.");
+        return;
+      }
+
+      const confirmed = window.confirm(`Delete "${job.title}" from the app? This cannot be undone.`);
+      if (!confirmed) {
+        return;
+      }
+
+      const response = await fetch(`/api/jobs/${jobId}`, {
+        method: "DELETE"
+      });
+
+      if (!response.ok) {
+        const error = (await response.json().catch(() => ({ error: "Could not delete job." }))) as { error?: string };
+        showToast(error.error ?? "Could not delete job.");
+        return;
+      }
+
+      overrideDrafts.delete(jobId);
+      showToast("Job deleted.");
       await loadSummary();
     });
   });
@@ -1047,6 +1085,56 @@ columnFilterButtons.forEach((button) => {
 
 exportAppButton?.addEventListener("click", () => {
   void exportVisibleJobs();
+});
+
+clearJobsButton?.addEventListener("click", async () => {
+  const confirmed = window.confirm(
+    "Clear all jobs from the app? This keeps your imported searches and run history, but deletes all jobs and job reviews.",
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  const response = await fetch("/api/maintenance/clear-jobs", {
+    method: "POST"
+  });
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({ error: "Could not clear jobs." }))) as { error?: string };
+    showToast(error.error ?? "Could not clear jobs.");
+    return;
+  }
+
+  const result = (await response.json()) as { deletedJobs?: number };
+  overrideDrafts.clear();
+  selectedJobId = null;
+  showToast(`Cleared ${result.deletedJobs ?? 0} job${result.deletedJobs === 1 ? "" : "s"}.`);
+  await loadSummary();
+});
+
+clearAllButton?.addEventListener("click", async () => {
+  const confirmed = window.confirm(
+    "Clear all jobs and all run history? This keeps your imported searches and AI guidance, but removes captured jobs and recent runs.",
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  const response = await fetch("/api/maintenance/clear-all", {
+    method: "POST"
+  });
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({ error: "Could not clear all data." }))) as { error?: string };
+    showToast(error.error ?? "Could not clear all data.");
+    return;
+  }
+
+  const result = (await response.json()) as { deletedJobs?: number; deletedRuns?: number };
+  overrideDrafts.clear();
+  selectedJobId = null;
+  showToast(
+    `Cleared ${result.deletedJobs ?? 0} job${result.deletedJobs === 1 ? "" : "s"} and ${result.deletedRuns ?? 0} run${result.deletedRuns === 1 ? "" : "s"}.`,
+  );
+  await loadSummary();
 });
 
 sortButtons.forEach((button) => {

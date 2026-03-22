@@ -779,4 +779,153 @@ describe("Repository", () => {
     expect(repository.listRuns()).toHaveLength(0);
     expect(repository.listSearchProfiles()).toHaveLength(1);
   });
+
+  it("deletes a single job without touching other jobs", () => {
+    const repository = createRepository();
+    repository.replaceSearchProfiles([
+      {
+        id: "frontend",
+        name: "Frontend",
+        keywords: "frontend engineer",
+        location: "Vancouver, BC",
+        remote: false
+      }
+    ]);
+
+    const searches = repository.listSearchProfiles();
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
+      runMode: "fixed",
+      maxPages: 1,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
+
+    repository.ingestCapture({
+      source: "indeed",
+      runTargetId: targets[0].id,
+      pageUrl: "https://ca.indeed.com/jobs?q=frontend+engineer&l=Vancouver%2C+BC",
+      listings: [
+        {
+          sourceJobId: "jk-one",
+          url: "https://ca.indeed.com/viewjob?jk=jk-one",
+          title: "Frontend Engineer",
+          company: "Acme",
+          location: "Vancouver, BC"
+        },
+        {
+          sourceJobId: "jk-two",
+          url: "https://ca.indeed.com/viewjob?jk=jk-two",
+          title: "Frontend Engineer II",
+          company: "Beta",
+          location: "Vancouver, BC"
+        }
+      ]
+    });
+
+    const jobs = repository.listJobs();
+    expect(repository.deleteJob(jobs[0].id)).toBe(true);
+    expect(repository.deleteJob(999999)).toBe(false);
+    expect(repository.listJobs()).toHaveLength(1);
+  });
+
+  it("clears jobs while preserving run history", () => {
+    const repository = createRepository();
+    repository.replaceSearchProfiles([
+      {
+        id: "frontend",
+        name: "Frontend",
+        keywords: "frontend engineer",
+        location: "Vancouver, BC",
+        remote: false
+      }
+    ]);
+
+    const searches = repository.listSearchProfiles();
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
+      runMode: "fixed",
+      maxPages: 1,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
+
+    repository.ingestCapture({
+      source: "indeed",
+      runTargetId: targets[0].id,
+      pageUrl: "https://ca.indeed.com/jobs?q=frontend+engineer&l=Vancouver%2C+BC",
+      listings: [
+        {
+          sourceJobId: "jk-one",
+          url: "https://ca.indeed.com/viewjob?jk=jk-one",
+          title: "Frontend Engineer",
+          company: "Acme",
+          location: "Vancouver, BC"
+        }
+      ]
+    });
+
+    const result = repository.clearJobsData();
+    expect(result.deletedJobs).toBe(1);
+    expect(repository.listJobs()).toHaveLength(0);
+    expect(repository.listRuns()).toHaveLength(1);
+    expect(repository.listLatestRunTargets()).toHaveLength(1);
+  });
+
+  it("clears all captured data including runs while preserving searches", () => {
+    const repository = createRepository();
+    repository.replaceSearchProfiles([
+      {
+        id: "frontend",
+        name: "Frontend",
+        keywords: "frontend engineer",
+        location: "Vancouver, BC",
+        remote: false
+      }
+    ]);
+
+    const searches = repository.listSearchProfiles();
+    const { targets } = repository.createRun(buildRunTargetTemplates(searches, []), {
+      retentionMode: "cumulative",
+      runMode: "fixed",
+      maxPages: 1,
+      zeroNewJobsThreshold: 2,
+      emergencyMaxPages: 50,
+      searchLaunchDelayMs: 20_000,
+      searchLaunchJitterMs: 20_000,
+      pageDelayMs: 8_000,
+      pageDelayJitterMs: 12_000
+    });
+
+    repository.ingestCapture({
+      source: "indeed",
+      runTargetId: targets[0].id,
+      pageUrl: "https://ca.indeed.com/jobs?q=frontend+engineer&l=Vancouver%2C+BC",
+      listings: [
+        {
+          sourceJobId: "jk-one",
+          url: "https://ca.indeed.com/viewjob?jk=jk-one",
+          title: "Frontend Engineer",
+          company: "Acme",
+          location: "Vancouver, BC"
+        }
+      ]
+    });
+
+    const result = repository.clearAllData();
+    expect(result.deletedJobs).toBe(1);
+    expect(result.deletedRuns).toBe(1);
+    expect(repository.listJobs()).toHaveLength(0);
+    expect(repository.listRuns()).toHaveLength(0);
+    expect(repository.listLatestRunTargets()).toHaveLength(0);
+    expect(repository.listSearchProfiles()).toHaveLength(1);
+  });
 });
